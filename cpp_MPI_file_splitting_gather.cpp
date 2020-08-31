@@ -1,5 +1,5 @@
 #include <string>
-#include <cstring>
+//#include <cstring>
 #include <iostream>
 #include <fstream>
 #include <cstdio>
@@ -188,7 +188,7 @@ void parseLine(string line) {
 	string token;
 	int i = 0;
 	factor_struct * temp_factor[5];
-	borough_struct * temp_borough;
+	borough_struct * temp_borough = NULL;
 	int deaths = 0;
 
 	//TODO if the same accident have more than 1 contrib fact the data are multiplied -> check if it is ok
@@ -203,14 +203,18 @@ void parseLine(string line) {
 				case 2: //borough
 					temp_borough = getBorough(token);
 	    			break;
-				case 11 | 13 | 15:	//death
+				case 11:	//death
+				case 13:
+				case 15:
 					deaths += stoi(token);
 					break;
 				case 17: //death + borough update
 					deaths += stoi(token);
-					temp_borough -> weekAccidentsCounter[date -> index] ++;
+					if(temp_borough != NULL)
+						temp_borough -> weekAccidentsCounter[date -> index] ++;
 					if(deaths) {
-						temp_borough -> weekLethal[date -> index] ++;
+						if(temp_borough != NULL)
+							temp_borough -> weekLethal[date -> index] ++;
 						weekLethalCounter[date -> index] ++; 
 					}
 					break;
@@ -337,7 +341,8 @@ int main(int argc, char * argv[]) {
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 	int root = 0; 
 
-   	ifstream file ("../NYPD_Motor_Vehicle_Collisions.csv");
+   	ifstream file;
+	file.open("../NYPD_Motor_Vehicle_Collisions.csv", ifstream::in);
     if (!file.is_open()) {
         cout << "Can not open file" << endl;
         return -1;
