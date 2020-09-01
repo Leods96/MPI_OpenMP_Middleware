@@ -106,18 +106,15 @@ factor_struct * getFactor(string token) {
 }
 
 void mergeFactor(factor_struct * f, int dim) {
-	cout << "start merge" << endl;
 	//TODO skippare la porzione della root e diminuire le iterazioni
 	string token = "";
 	factor_map.clear();
-		cout << "clean" << endl;
 
 	for(int i = 0; i < dim ; i++) {
 		//token = f[i].name;
 		for (int j = 0; j < NAME_DIM && f[i].name[j] != '\0'; j++) {
 			token = token + f[i].name[j];
 		}
-		cout << "Name = " << token << endl;
 
 		if(factor_map.find(token) == factor_map.end())
 			factor_map.insert({token, &f[i]});
@@ -130,12 +127,10 @@ void mergeFactor(factor_struct * f, int dim) {
 		}
 		token = "";
 	}
-	cout << "End merge" << endl;
 
 }
 
 void mergeBorough(borough_struct * b, int dim) {
-	cout << "Start merge" << endl;
 	string token = "";
 	borough_map.clear();
 	for(int i = 0; i < dim; i++) {
@@ -189,14 +184,14 @@ void parseLine(string line) {
 				case 2: //borough
 					temp_borough = getBorough(token);
 	    			break;
-				case 11:
+				case 11:	//death
 				case 13:
-				case 15:	//death
+				case 15:
 					deaths += stoi(token);
 					break;
 				case 17: //death + borough update
 					deaths += stoi(token);
-					if (temp_borough != NULL) 
+					if(temp_borough != NULL)
 						temp_borough -> weekAccidentsCounter[date -> index] ++;
 					if(deaths) {
 						if(temp_borough != NULL)
