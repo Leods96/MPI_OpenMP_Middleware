@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <sstream>
 #include <unordered_map>
+#include <set>
 #include <chrono>
 #include <mpi.h>
 
@@ -38,7 +39,6 @@ typedef struct {
 	int lethalAccidentsNumber;
 	int deathsNumber;
 } factor_struct;
-unordered_map<string, factor_struct *> factor_map; //Second query structure
 
 /*
 contains the information on the borough for each line
@@ -48,7 +48,6 @@ typedef struct {
 	int weekAccidentsCounter[WEEK_ARRAY_DIM];
 	int weekLethal[WEEK_ARRAY_DIM];
 } borough_struct;
-unordered_map<string, borough_struct *> borough_map; //Third query structure
 
 date_struct * computeDate(string token) {
 	date_struct * date = (date_struct*) malloc (sizeof(date_struct));
@@ -80,7 +79,7 @@ date_struct * computeDate(string token) {
 	return date;
 }
 
-borough_struct * getBorough(string token) {
+borough_struct * getBorough(string token, unordered_map<string, borough_struct *> &borough_map) {
 	if(borough_map.find(token) != borough_map.end())
 		return borough_map.find(token) -> second;
 	borough_struct * temp_borough = (borough_struct *) malloc (sizeof(borough_struct));
@@ -93,7 +92,7 @@ borough_struct * getBorough(string token) {
 	return temp_borough;
 }
 
-factor_struct * getFactor(string token) {
+factor_struct * getFactor(string token, unordered_map<string, factor_struct *> &factor_map) {
 	if(factor_map.find(token) != factor_map.end())
 		return factor_map.find(token) -> second;
 	factor_struct * temp_factor = (factor_struct *) malloc (sizeof(factor_struct));
@@ -105,7 +104,7 @@ factor_struct * getFactor(string token) {
 	return temp_factor;
 }
 
-void mergeFactor(factor_struct * f, int dim) {
+void mergeFactor(factor_struct * f, int dim, unordered_map<string, factor_struct *> &factor_map) {
 	//TODO skippare la porzione della root e diminuire le iterazioni
 	string token = "";
 	factor_map.clear();
@@ -127,10 +126,9 @@ void mergeFactor(factor_struct * f, int dim) {
 		}
 		token = "";
 	}
-
 }
 
-void mergeBorough(borough_struct * b, int dim) {
+void mergeBorough(borough_struct * b, int dim, unordered_map<string, borough_struct *> &borough_map) {
 	string token = "";
 	borough_map.clear();
 	for(int i = 0; i < dim; i++) {
@@ -149,28 +147,22 @@ void mergeBorough(borough_struct * b, int dim) {
 }
 
 template <typename T>
-void getArrayFromMap(unordered_map<string, T *> map, T array[]) {
+void getArrayFromMap(unordered_map<string, T *> &map, T array[]) {
 	int i = 0;
 	for(auto iter = map.begin(); iter != map.end(); ++iter) {
-		/*strcpy(array[i].name, iter -> second -> name);
-		array[i].accidentsNumber = iter -> second -> accidentsNumber;
-		array[i].lethalAccidentsNumber = iter -> second -> lethalAccidentsNumber;
-		array[i].deathsNumber = iter -> second -> deathsNumber;*/
 		memcpy(&array[i], iter -> second, sizeof(T));
 		i++;
 	}
 } 
 
-void parseLine(string line) {
+void parseLine(string line, unordered_map<string, borough_struct *> &borough_map, unordered_map<string, factor_struct *> &factor_map) {
 	stringstream ss(line);
 	string token;
 	int i = 0, deaths = 0;
-	factor_struct * temp_factor[5];
+	set<string> factors;
 	borough_struct * temp_borough = NULL;
-	date_struct* date;
+	date_struct * date;
 
-	//TODO if the same accident have more than 1 contrib fact the data are multiplied -> check if it is ok
-	//it is possible to put a bool into the struct and update it only of it is false...at the and set to false
     while(getline(ss, token, ',') && i < 23) {
     	if(token[0] == '"') {
     		while(token[token.length()-1] != '"')
@@ -181,7 +173,7 @@ void parseLine(string line) {
 	    			date = computeDate(token);
 	    			break;
 				case 2: //borough
-					temp_borough = getBorough(token);
+					temp_borough = getBorough(token, borough_map);
 	    			break;
 				case 11:	//death
 				case 13:
@@ -199,44 +191,11 @@ void parseLine(string line) {
 					}
 					break;
 				case 18: //factor1
-					temp_factor[0] = getFactor(token);
-					temp_factor[0] -> accidentsNumber ++;
-					if(deaths) {
-						temp_factor[0] -> lethalAccidentsNumber++;
-						temp_factor[0] -> deathsNumber += deaths;
-					}
-					break;
 				case 19: //factor2
-					temp_factor[1] = getFactor(token);
-					temp_factor[1] -> accidentsNumber ++;
-					if(deaths) {
-						temp_factor[1] -> lethalAccidentsNumber++;
-						temp_factor[1] -> deathsNumber += deaths;
-					}
-					break;
 				case 20: //factor3
-					temp_factor[2] = getFactor(token);
-					temp_factor[2] -> accidentsNumber ++;
-					if(deaths) {
-						temp_factor[2] -> lethalAccidentsNumber++;
-						temp_factor[2] -> deathsNumber += deaths;
-					}
-					break;
 				case 21: //factor4
-					temp_factor[3] = getFactor(token);
-					temp_factor[3] -> accidentsNumber ++;
-					if(deaths) {
-						temp_factor[3] -> lethalAccidentsNumber++;
-						temp_factor[3] -> deathsNumber += deaths;
-					}
-					break;
 				case 22: //factor5
-					temp_factor[4] = getFactor(token);
-					temp_factor[4] -> accidentsNumber ++;
-					if(deaths) {
-						temp_factor[4] -> lethalAccidentsNumber++;
-						temp_factor[4] -> deathsNumber += deaths;
-					}
+					factors.insert(token);
 					break;
 				default:
 				//do nothing
@@ -244,6 +203,16 @@ void parseLine(string line) {
 	    	}
 	    	i++;
     }
+    factor_struct * temp_factor;
+    for(auto f : factors) {
+    	temp_factor = getFactor(f, factor_map);
+		temp_factor -> accidentsNumber ++;
+		if(deaths) {
+			temp_factor -> lethalAccidentsNumber++;
+			temp_factor -> deathsNumber += deaths;
+		}
+    }
+    free(date);
 }
 
 void printFirstQuery(int result[WEEK_ARRAY_DIM]) {
@@ -256,7 +225,7 @@ void printFirstQuery(int result[WEEK_ARRAY_DIM]) {
 	}
 }
 
-void printSecondQuery() {
+void printSecondQuery(unordered_map<string, factor_struct *> &factor_map) {
 	cout << "----------------------------Second query----------------------------" << endl << endl;
 	for(auto iter = factor_map.begin(); iter != factor_map.end(); ++iter) {
 		auto p = iter -> second;
@@ -265,7 +234,7 @@ void printSecondQuery() {
 	}
 }
 
-void printThirdQuery() {
+void printThirdQuery(unordered_map<string, borough_struct *> &borough_map) {
 	cout << "----------------------------Third query----------------------------" << endl << endl;
 	for(auto iter = borough_map.begin(); iter != borough_map.end(); ++iter) {
 		auto p = iter -> second;
@@ -290,14 +259,17 @@ int main(int argc, char * argv[]) {
     streampos begin, end;
 	string line;
 
+	/*
+	Setup for datatype creation, used during the gatherv to pass complex data
+	*/
 	MPI_Datatype boroughtype, factortype;
 	MPI_Datatype typef[4] = {MPI_CHAR, MPI_INT, MPI_INT, MPI_INT}, typeb[3] = {MPI_CHAR, MPI_INT, MPI_INT};
 	int blocklenf[4] = {NAME_DIM, 1, 1, 1}, blocklenb[3] = {NAME_DIM, WEEK_ARRAY_DIM, WEEK_ARRAY_DIM};
 	MPI_Aint dispf[4], dispb[3];
 	MPI_Status stat;
 
-    factor_struct * f = (factor_struct *) malloc (sizeof(factor_struct));
-    borough_struct * b = (borough_struct *) malloc (sizeof(borough_struct));
+    factor_struct * f;
+    borough_struct * b;
 
     dispf[0] = reinterpret_cast<std::uintptr_t>(f -> name) - reinterpret_cast<std::uintptr_t>(f);
 	dispf[1] = reinterpret_cast<std::uintptr_t>(&f -> accidentsNumber) - reinterpret_cast<std::uintptr_t>(f);
@@ -308,8 +280,11 @@ int main(int argc, char * argv[]) {
     dispb[1] = reinterpret_cast<std::uintptr_t>(&b -> weekAccidentsCounter) - reinterpret_cast<std::uintptr_t>(b);
     dispb[2] = reinterpret_cast<std::uintptr_t>(&b -> weekLethal) - reinterpret_cast<std::uintptr_t>(b);
 
-    MPI_Init(&argc, &argv);
+    MPI_Init(&argc, &argv); //MPI Initialization
 
+    /*
+    new datatype creation and commit 
+    */
     MPI_Type_create_struct(4, blocklenf, dispf, typef, &factortype);
     MPI_Type_commit(&factortype);
     MPI_Type_create_struct(3, blocklenb, dispb, typeb, &boroughtype);
@@ -325,34 +300,42 @@ int main(int argc, char * argv[]) {
         cout << "Can not open file" << endl;
         return -1;
     }
-
 	auto start = chrono::high_resolution_clock::now();
 
+	/*
+	Calculation of the file size in order to spli the data between the processes
+	*/
     begin = file.tellg();
     file.seekg(0, ios::end);
     end = file.tellg();
     filesize = end-begin;
-
     starting_offset = filesize/size * rank;
     limit = starting_offset + filesize/size;
-
     file.seekg(starting_offset);
+	
+	/*
+	Parse the file until it is finished or the portion's limit is reached
+    */
+    unordered_map<string, factor_struct *> factor_map; //Second query structure
+    unordered_map<string, borough_struct *> borough_map; //Third query structure
 
-	getline(file,line); //positioning on the beginnin of the next line, 0 skip the header
-
-    while(getline(file,line)) { //parse the file since it is finished 
-    	parseLine(line);
+   	getline(file,line); //Positioning on the beginning of the next line, 0 skip the header line
+    while(getline(file,line)) { 
+    	parseLine(line, borough_map, factor_map);
     	if(file.tellg() > limit) //if we reach the limit -> exit
     		break;
     }
-
-
 	file.close();
-//Gather for first query
+	
+	/*
+	Gather for first query
+    */
     int first_query_res_buf[WEEK_ARRAY_DIM];
     MPI_Reduce(weekLethalCounter, first_query_res_buf, WEEK_ARRAY_DIM, MPI_INT, MPI_SUM, root, MPI_COMM_WORLD);
-//Gatherv for second query
-   	int * dimension_array = (rank == root) ? (int *) malloc(sizeof(int) * size) : NULL;
+	/*
+	Gatherv for second query
+   	*/
+   	int * dimension_array = (rank == root) ? (int *) malloc(sizeof(int) * size) : NULL; 
 	int gather_size = factor_map.size(), displ_array[size], recv_buf_dim;
     factor_struct factors_for_gatherv[gather_size];
     getArrayFromMap(factor_map, factors_for_gatherv);
@@ -371,8 +354,10 @@ int main(int argc, char * argv[]) {
     MPI_Gatherv(factors_for_gatherv, gather_size, factortype, factor_recv_buf, dimension_array, displ_array, factortype, root, MPI_COMM_WORLD);
    
     if(rank == root)
-    	mergeFactor(factor_recv_buf, recv_buf_dim);
-//Gatherv for third query
+    	mergeFactor(factor_recv_buf, recv_buf_dim, factor_map);
+	/*
+	Gatherv for third query
+    */
     gather_size = borough_map.size();
     borough_struct boroughs_for_gatherv[gather_size];
     getArrayFromMap(borough_map, boroughs_for_gatherv);
@@ -393,15 +378,17 @@ int main(int argc, char * argv[]) {
     MPI_Gatherv(boroughs_for_gatherv, gather_size, boroughtype, borough_recv_buf, dimension_array, displ_array, boroughtype, root, MPI_COMM_WORLD);
 
 	if(rank == root)
-    	mergeBorough(borough_recv_buf, recv_buf_dim);
-//Print of the results
+    	mergeBorough(borough_recv_buf, recv_buf_dim, borough_map);
+	/*
+	Print of the results
+	*/
 	MPI_Finalize();
 	if(rank == 0) {
 	    auto stop = chrono::high_resolution_clock::now();
 
 	    printFirstQuery(first_query_res_buf);
-	    printSecondQuery();
-	    printThirdQuery();
+	    printSecondQuery(factor_map);
+	    printThirdQuery(borough_map);
 
 	    auto duration = chrono::duration_cast<chrono::milliseconds>(stop - start);
 	    cout << "Execution time = " << duration.count() << " milliseconds" << endl;
