@@ -1,4 +1,3 @@
-#include <string>
 #include <cstring>
 #include <iostream>
 #include <fstream>
@@ -107,11 +106,19 @@ factor_struct * getFactor(string token) {
 }
 
 void mergeFactor(factor_struct * f, int dim) {
+	cout << "start merge" << endl;
 	//TODO skippare la porzione della root e diminuire le iterazioni
 	string token = "";
 	factor_map.clear();
+		cout << "clean" << endl;
+
 	for(int i = 0; i < dim ; i++) {
-		token = f[i].name;
+		//token = f[i].name;
+		for (int j = 0; j < NAME_DIM && f[i].name[j] != '\0'; j++) {
+			token = token + f[i].name[j];
+		}
+		cout << "Name = " << token << endl;
+
 		if(factor_map.find(token) == factor_map.end())
 			factor_map.insert({token, &f[i]});
 		else {
@@ -123,6 +130,8 @@ void mergeFactor(factor_struct * f, int dim) {
 		}
 		token = "";
 	}
+	cout << "End merge" << endl;
+
 }
 
 void mergeBorough(borough_struct * b, int dim) {
@@ -142,7 +151,6 @@ void mergeBorough(borough_struct * b, int dim) {
 		}	
 		token = "";	
 	}
-	cout << "End merge" << endl;
 }
 
 template <typename T>
@@ -158,43 +166,21 @@ void getArrayFromMap(unordered_map<string, T *> map, T array[]) {
 	}
 } 
 
-template <typename T>
-void execute_Gather(T * recv_buf, int * recv_buf_dim, MPI_Datatype * type, unordered_map<string, T *> map, int size, int rank, int root) {
-	if(rank == root) cout << "Start function" << endl;
-	int gather_size = map.size(), displ_array[size];
-	int * dimension_array = (rank == root) ? dimension_array = (int *) malloc(sizeof(int) * size) : NULL;
-	T elem_for_gatherv[gather_size];
-    
-    getArrayFromMap(map, elem_for_gatherv);
-    //Get data dimension from all the processes
-    MPI_Gather(&gather_size, 1, MPI_INT, dimension_array, 1, MPI_INT, root, MPI_COMM_WORLD);
-    //Set up of the dimensions and diplacements for the gatherv call
-    *recv_buf_dim = gather_size;
-    if(rank == root) {
-    	displ_array[0] = 0;
-    	for (int i = 1; i < size; i ++) {
-    		displ_array[i] = dimension_array[i - 1] + displ_array[i - 1];
-    		* recv_buf_dim += dimension_array[i];
-    	}
-    }    
-    recv_buf = (rank == root) ? recv_buf = (T *) malloc (sizeof(T) * (* recv_buf_dim)) : NULL;
-
-    MPI_Gatherv(elem_for_gatherv, gather_size, * type, recv_buf, dimension_array, displ_array, * type, root, MPI_COMM_WORLD);
-    cout <<rank <<  " End function" << endl;
-}
-
 void parseLine(string line) {
 	stringstream ss(line);
 	string token;
 	int i = 0;
 	factor_struct * temp_factor[5];
-	borough_struct * temp_borough;
+	borough_struct * temp_borough = NULL;
 	int deaths = 0;
 
 	//TODO if the same accident have more than 1 contrib fact the data are multiplied -> check if it is ok
 	//it is possible to put a bool into the struct and update it only of it is false...at the and set to false
-    for(int i = 0; getline(ss, token, ',') && i < 23; i++) {
-    	if(token.compare("") != 0)
+    while(getline(ss, token, ',') && i < 23) {
+    	if(token[0] == '"') {
+    		while(token[token.length()-1] != '"')
+    			getline(ss, token, ',');
+    	} else if(token.compare("") != 0)
 	    	switch(i) {
 	    		case 0: //date
 	    			computeDate(token);
@@ -203,14 +189,18 @@ void parseLine(string line) {
 				case 2: //borough
 					temp_borough = getBorough(token);
 	    			break;
-				case 11 | 13 | 15:	//death
+				case 11:
+				case 13:
+				case 15:	//death
 					deaths += stoi(token);
 					break;
 				case 17: //death + borough update
 					deaths += stoi(token);
-					temp_borough -> weekAccidentsCounter[date -> index] ++;
+					if (temp_borough != NULL) 
+						temp_borough -> weekAccidentsCounter[date -> index] ++;
 					if(deaths) {
-						temp_borough -> weekLethal[date -> index] ++;
+						if(temp_borough != NULL)
+							temp_borough -> weekLethal[date -> index] ++;
 						weekLethalCounter[date -> index] ++; 
 					}
 					break;
@@ -258,9 +248,7 @@ void parseLine(string line) {
 				//do nothing
 					break;
 	    	}
-	    	//TODO remove is for debug
-	    	if((i == 22 || i == 21 || i == 20 || i == 19 || 1 == 18) && (token.compare("1") == 0 || token.compare("2") == 0 || token.compare("3") == 0 || token.compare("4") == 0 || token.compare("5") == 0))
-    			cout << "Linea stronza : " << line << endl;
+	    	i++;
     }
 }
 
@@ -337,7 +325,8 @@ int main(int argc, char * argv[]) {
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 	int root = 0; 
 
-   	ifstream file ("../NYPD_Motor_Vehicle_Collisions.csv");
+   	ifstream file; 
+   	file.open("../../NYPD_Motor_Vehicle_Collisions.csv");
     if (!file.is_open()) {
         cout << "Can not open file" << endl;
         return -1;
@@ -363,38 +352,19 @@ int main(int argc, char * argv[]) {
     		break;
     }
 
-	file.close();
 
+	file.close();
+//Gather for first query
     int first_query_res_buf[WEEK_ARRAY_DIM];
     MPI_Reduce(weekLethalCounter, first_query_res_buf, WEEK_ARRAY_DIM, MPI_INT, MPI_SUM, root, MPI_COMM_WORLD);
-
-/*    int recv_buf_dim;
-    factor_struct * factor_recv_buf;
-    execute_Gather(factor_recv_buf, &recv_buf_dim, &factortype, factor_map, size, rank, root);
-    if(rank == root)
-    	mergeFactor(factor_recv_buf, recv_buf_dim);
-
-    if(rank == root) cout << "Post factor" << endl;
-
-
-    borough_struct * borough_recv_buf;
-    execute_Gather(borough_recv_buf, &recv_buf_dim, &boroughtype, borough_map, size, rank, root);
-    if(rank == root)
-    	mergeBorough(borough_recv_buf, recv_buf_dim);
-
-	if(rank == root) cout << "End" << endl;*/
-//------------------------------------------------------------------------
-	int gather_size = factor_map.size(), displ_array[size];
-	int * dimension_array = NULL;
-	if(rank == root)
-		dimension_array = (int *) malloc(sizeof(int) * size);
-
+//Gatherv for second query
+   	int * dimension_array = (rank == root) ? (int *) malloc(sizeof(int) * size) : NULL;
+	int gather_size = factor_map.size(), displ_array[size], recv_buf_dim;
     factor_struct factors_for_gatherv[gather_size];
-
     getArrayFromMap(factor_map, factors_for_gatherv);
-    //Prendo dimensioni dei dati da ricevere
+
     MPI_Gather(&gather_size, 1, MPI_INT, dimension_array, 1, MPI_INT, root, MPI_COMM_WORLD);
-    int recv_buf_dim = gather_size;
+    recv_buf_dim = gather_size;
     if(rank == root) {
     	displ_array[0] = 0;
     	for (int i = 1; i < size; i ++) {
@@ -403,14 +373,12 @@ int main(int argc, char * argv[]) {
     	}
     }
     
-    factor_struct * factor_recv_buf = NULL;
-    if(rank == root)
-    	factor_recv_buf = (factor_struct *) malloc (sizeof(factor_struct) * recv_buf_dim);
+    factor_struct * factor_recv_buf = (rank == root) ? (factor_struct *) malloc (sizeof(factor_struct) * recv_buf_dim) : NULL;
     MPI_Gatherv(factors_for_gatherv, gather_size, factortype, factor_recv_buf, dimension_array, displ_array, factortype, root, MPI_COMM_WORLD);
    
     if(rank == root)
     	mergeFactor(factor_recv_buf, recv_buf_dim);
-//------------------------------------------------------------------------
+//Gatherv for third query
     gather_size = borough_map.size();
     borough_struct boroughs_for_gatherv[gather_size];
     getArrayFromMap(borough_map, boroughs_for_gatherv);
@@ -432,7 +400,7 @@ int main(int argc, char * argv[]) {
 
 	if(rank == root)
     	mergeBorough(borough_recv_buf, recv_buf_dim);
-//------------------------------------------------------------------------
+//Print of the results
 	MPI_Finalize();
 	if(rank == 0) {
 	    auto stop = chrono::high_resolution_clock::now();
