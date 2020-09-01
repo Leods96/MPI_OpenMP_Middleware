@@ -29,8 +29,6 @@ typedef struct {
 	int year;
 	int index;
 } date_struct;
-date_struct* date = (date_struct*) malloc (sizeof(date_struct));
-
 /*
 contains the information on the contributing factor for each line
 */
@@ -52,7 +50,8 @@ typedef struct {
 } borough_struct;
 unordered_map<string, borough_struct *> borough_map; //Third query structure
 
-void computeDate(string token) {
+date_struct * computeDate(string token) {
+	date_struct * date = (date_struct*) malloc (sizeof(date_struct));
     stringstream ss(token);
     getline(ss, token, '/');
 	date -> month = stoi(token);
@@ -78,6 +77,7 @@ void computeDate(string token) {
 		numberOfDays -= 7 - shift;
 		date -> index = yeardiff * YEAR_DIM + (int)(numberOfDays / 7) + 1;
 	}
+	return date;
 }
 
 borough_struct * getBorough(string token) {
@@ -164,10 +164,10 @@ void getArrayFromMap(unordered_map<string, T *> map, T array[]) {
 void parseLine(string line) {
 	stringstream ss(line);
 	string token;
-	int i = 0;
+	int i = 0, deaths = 0;
 	factor_struct * temp_factor[5];
 	borough_struct * temp_borough = NULL;
-	int deaths = 0;
+	date_struct* date;
 
 	//TODO if the same accident have more than 1 contrib fact the data are multiplied -> check if it is ok
 	//it is possible to put a bool into the struct and update it only of it is false...at the and set to false
@@ -178,8 +178,7 @@ void parseLine(string line) {
     	} else if(token.compare("") != 0)
 	    	switch(i) {
 	    		case 0: //date
-	    			computeDate(token);
-	    			//cout << "date: " << token << " - day: " << date -> day << " month: " << date -> month << " year: " << date -> year << " index: " << date -> index << endl;
+	    			date = computeDate(token);
 	    			break;
 				case 2: //borough
 					temp_borough = getBorough(token);
