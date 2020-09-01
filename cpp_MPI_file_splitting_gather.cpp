@@ -7,6 +7,7 @@
 #include <set>
 #include <chrono>
 #include <mpi.h>
+#include <omp.h>
 
 #define WEEK_ARRAY_DIM 324 
 #define YEAR_DIM 54
@@ -30,6 +31,7 @@ typedef struct {
 	int year;
 	int index;
 } date_struct;
+
 /*
 contains the information on the contributing factor for each line
 */
@@ -85,6 +87,8 @@ borough_struct * getBorough(string token, unordered_map<string, borough_struct *
 	borough_struct * temp_borough = (borough_struct *) malloc (sizeof(borough_struct));
 	borough_map.insert({token, temp_borough});
 	strcpy(temp_borough -> name, token.c_str());
+	int chunkSize = WEEK_ARRAY_DIM/omp_get_max_threads();
+	#pragma omp parallel for schedule(dynamic, chunkSize) shared(temp_borough)
 	for(int i = 0; i < WEEK_ARRAY_DIM; i++) {
 		temp_borough -> weekAccidentsCounter[i] = 0;
 		temp_borough -> weekLethal[i] = 0;
@@ -109,20 +113,24 @@ void mergeFactor(factor_struct * f, int dim, unordered_map<string, factor_struct
 	string token = "";
 	factor_map.clear();
 
+	int chunkSize = dim/omp_get_max_threads();
+	#pragma omp parallel for schedule(dynamic, chunkSize) shared(f) private(token)
 	for(int i = 0; i < dim ; i++) {
 		//token = f[i].name;
 		for (int j = 0; j < NAME_DIM && f[i].name[j] != '\0'; j++) {
 			token = token + f[i].name[j];
 		}
-
-		if(factor_map.find(token) == factor_map.end())
-			factor_map.insert({token, &f[i]});
-		else {
-			factor_struct * temp_factor = factor_map.find(token) -> second;
-			temp_factor -> accidentsNumber += f[i].accidentsNumber;
-			temp_factor -> lethalAccidentsNumber += f[i].lethalAccidentsNumber;
-			temp_factor -> deathsNumber += f[i].deathsNumber;
-			factor_map.insert({token, temp_factor});
+		#pragma omp critical (update_factor_map)
+		{
+			if(factor_map.find(token) == factor_map.end())
+				factor_map.insert({token, &f[i]});
+			else {
+				factor_struct * temp_factor = factor_map.find(token) -> second;
+				temp_factor -> accidentsNumber += f[i].accidentsNumber;
+				temp_factor -> lethalAccidentsNumber += f[i].lethalAccidentsNumber;
+				temp_factor -> deathsNumber += f[i].deathsNumber;
+				factor_map.insert({token, temp_factor});
+			}
 		}
 		token = "";
 	}
@@ -137,6 +145,8 @@ void mergeBorough(borough_struct * b, int dim, unordered_map<string, borough_str
 			borough_map.insert({token, &b[i]});
 		else {
 			borough_struct * temp_borough = borough_map.find(token) -> second;
+			int chunkSize = WEEK_ARRAY_DIM/omp_get_max_threads();
+			#pragma omp parallel for schedule(dynamic, chunkSize) shared(temp_borough, b)
 			for(int k = 0; k < WEEK_ARRAY_DIM; k++) {
 				temp_borough -> weekAccidentsCounter[k] += b[i].weekAccidentsCounter[k];
 				temp_borough -> weekLethal[k] += b[i].weekLethal[k];
