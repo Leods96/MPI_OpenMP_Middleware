@@ -87,7 +87,7 @@ borough_struct * getBorough(string token, unordered_map<string, borough_struct *
 	borough_struct * temp_borough = (borough_struct *) malloc (sizeof(borough_struct));
 	borough_map.insert({token, temp_borough});
 	strcpy(temp_borough -> name, token.c_str());
-	int chunkSize = WEEK_ARRAY_DIM/omp_get_max_threads();
+	int chunkSize = WEEK_ARRAY_DIM/omp_get_num_threads();
 	#pragma omp parallel for schedule(dynamic, chunkSize) shared(temp_borough)
 	for(int i = 0; i < WEEK_ARRAY_DIM; i++) {
 		temp_borough -> weekAccidentsCounter[i] = 0;
@@ -113,7 +113,7 @@ void mergeFactor(factor_struct * f, int dim, unordered_map<string, factor_struct
 	string token = "";
 	factor_map.clear();
 
-	int chunkSize = dim/omp_get_max_threads();
+	int chunkSize = dim/omp_get_num_threads();
 	#pragma omp parallel for schedule(dynamic, chunkSize) shared(f) private(token)
 	for(int i = 0; i < dim ; i++) {
 		//token = f[i].name;
@@ -145,7 +145,7 @@ void mergeBorough(borough_struct * b, int dim, unordered_map<string, borough_str
 			borough_map.insert({token, &b[i]});
 		else {
 			borough_struct * temp_borough = borough_map.find(token) -> second;
-			int chunkSize = WEEK_ARRAY_DIM/omp_get_max_threads();
+			int chunkSize = WEEK_ARRAY_DIM/omp_get_num_threads();
 			#pragma omp parallel for schedule(dynamic, chunkSize) shared(temp_borough, b)
 			for(int k = 0; k < WEEK_ARRAY_DIM; k++) {
 				temp_borough -> weekAccidentsCounter[k] += b[i].weekAccidentsCounter[k];
@@ -311,6 +311,12 @@ int main(int argc, char * argv[]) {
         return -1;
     }
 	auto start = chrono::high_resolution_clock::now();
+
+
+	#pragma omp parallel 
+	{
+		cout << 
+	}
 
 	/*
 	Calculation of the file size in order to spli the data between the processes
