@@ -312,12 +312,6 @@ int main(int argc, char * argv[]) {
     }
 	auto start = chrono::high_resolution_clock::now();
 
-
-	#pragma omp parallel 
-	{
-		cout << 
-	}
-
 	/*
 	Calculation of the file size in order to spli the data between the processes
 	*/
@@ -402,9 +396,9 @@ int main(int argc, char * argv[]) {
 	if(rank == 0) {
 	    auto stop = chrono::high_resolution_clock::now();
 
-	    printFirstQuery(first_query_res_buf);
-	    printSecondQuery(factor_map);
-	    printThirdQuery(borough_map);
+	    //printFirstQuery(first_query_res_buf);
+	    //printSecondQuery(factor_map);
+	    //printThirdQuery(borough_map);
 
 	    auto duration = chrono::duration_cast<chrono::milliseconds>(stop - start);
 	    cout << "Execution time = " << duration.count() << " milliseconds" << endl;
