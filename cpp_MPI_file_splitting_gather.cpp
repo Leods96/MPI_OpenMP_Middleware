@@ -60,8 +60,7 @@ date_struct * computeDate(string token) {
 	date -> day = stoi(token);
     getline(ss, token, '/');
 	date -> year = stoi(token);
-	//week computed starting from 1 gen 2012, 1 week = from sunday to saturday
-	int numberOfDays = daysInYear[date -> month - 1] + date -> day;
+	int numberOfDays = daysInYear[date -> month - 1] + date -> day;	//week computed starting from 1 gen 2012, 1 week = from sunday to saturday
 	if (date -> month > 1 && (date -> year % 400 == 0 || (date -> year % 4 == 0 && date -> year % 100 != 0))) { //Bisestile
 		numberOfDays++;
 	}
@@ -165,7 +164,7 @@ void getArrayFromMap(unordered_map<string, T *> &map, T array[]) {
 	}
 } 
 
-void parseLine(string line, unordered_map<string, borough_struct *> &borough_map, unordered_map<string, factor_struct *> &factor_map) {
+void parseLine(string line, unordered_map<string, borough_struct *> &borough_map, unordered_map<string, factor_struct *> &factor_map, int rank) {
 	stringstream ss(line);
 	string token;
 	int i = 0, deaths = 0;
@@ -183,7 +182,10 @@ void parseLine(string line, unordered_map<string, borough_struct *> &borough_map
 	    			date = computeDate(token);
 	    			break;
 				case 2: //borough
-					temp_borough = getBorough(token, borough_map);
+					#pragma omp critical (borough_map_interaction) 
+					{
+						temp_borough = getBorough(token, borough_map);
+	    			}
 	    			break;
 				case 11:	//death
 				case 13:
@@ -192,12 +194,15 @@ void parseLine(string line, unordered_map<string, borough_struct *> &borough_map
 					break;
 				case 17: //death + borough update
 					deaths += stoi(token);
-					if(temp_borough != NULL)
-						temp_borough -> weekAccidentsCounter[date -> index] ++;
-					if(deaths) {
+					#pragma omp critical (borough_map_interaction) 
+					{
 						if(temp_borough != NULL)
-							temp_borough -> weekLethal[date -> index] ++;
-						weekLethalCounter[date -> index] ++; 
+							temp_borough -> weekAccidentsCounter[date -> index] ++;
+						if(deaths) {
+							if(temp_borough != NULL)
+								temp_borough -> weekLethal[date -> index] ++;
+							weekLethalCounter[date -> index] ++; 
+						}
 					}
 					break;
 				case 18: //factor1
@@ -215,14 +220,18 @@ void parseLine(string line, unordered_map<string, borough_struct *> &borough_map
     }
     factor_struct * temp_factor;
     for(auto f : factors) {
-    	temp_factor = getFactor(f, factor_map);
-		temp_factor -> accidentsNumber ++;
-		if(deaths) {
-			temp_factor -> lethalAccidentsNumber++;
-			temp_factor -> deathsNumber += deaths;
+		#pragma omp critical (factor_map_interaction) 
+    	{
+	    	temp_factor = getFactor(f, factor_map);
+			temp_factor -> accidentsNumber ++;
+			if(deaths) {
+				temp_factor -> lethalAccidentsNumber++;
+				temp_factor -> deathsNumber += deaths;
+			}
 		}
     }
     free(date);
+    factors.clear();
 }
 
 void printFirstQuery(int result[WEEK_ARRAY_DIM]) {
@@ -321,8 +330,7 @@ int main(int argc, char * argv[]) {
     filesize = end-begin;
     starting_offset = filesize/size * rank;
     limit = starting_offset + filesize/size;
-    file.seekg(starting_offset);
-	
+	file.close();
 	/*
 	Parse the file until it is finished or the portion's limit is reached
     */
@@ -330,12 +338,22 @@ int main(int argc, char * argv[]) {
     unordered_map<string, borough_struct *> borough_map; //Third query structure
 
    	getline(file,line); //Positioning on the beginning of the next line, 0 skip the header line
-    while(getline(file,line)) { 
-    	parseLine(line, borough_map, factor_map);
-    	if(file.tellg() > limit) //if we reach the limit -> exit
-    		break;
-    }
-	file.close();
+   	#pragma omp parallel shared (limit, starting_offset, borough_map, factor_map) private (line)
+   	{	
+   		ifstream private_file;
+   	   	private_file.open("../../NYPD_Motor_Vehicle_Collisions.csv");
+   		int chunkSize = (limit - starting_offset) / omp_get_num_threads();
+   		int private_offset = chunkSize  * omp_get_thread_num();
+   		int private_limit = private_offset + chunkSize;
+   		private_file.seekg(starting_offset + private_offset);
+   		getline(private_file, line);
+	    while(getline(private_file,line)) { 
+	    	parseLine(line, borough_map, factor_map, rank);
+	    	if(private_file.tellg() > limit + private_limit) //if we reach the limit -> exit
+	    		break;
+	    }
+	    private_file.close();
+	}
 	
 	/*
 	Gather for first query
@@ -396,9 +414,9 @@ int main(int argc, char * argv[]) {
 	if(rank == 0) {
 	    auto stop = chrono::high_resolution_clock::now();
 
-	    //printFirstQuery(first_query_res_buf);
-	    //printSecondQuery(factor_map);
-	    //printThirdQuery(borough_map);
+	    printFirstQuery(first_query_res_buf);
+	    printSecondQuery(factor_map);
+	    printThirdQuery(borough_map);
 
 	    auto duration = chrono::duration_cast<chrono::milliseconds>(stop - start);
 	    cout << "Execution time = " << duration.count() << " milliseconds" << endl;
