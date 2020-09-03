@@ -17,11 +17,6 @@
 using namespace std;
 
 const int daysInYear[12] = {0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334};
-/*	
-each year is composed at most by 54 week, each week start from sun to sat, 
-if one year start from saturday the first week is composed by only one day and the first week is burned 
-*/
-int weekLethalCounter[WEEK_ARRAY_DIM]; 
 
 /*
 contains the information on the date for each line
@@ -87,14 +82,6 @@ borough_struct * getBorough(string token, unordered_map<string, borough_struct *
 	borough_struct * temp_borough = (borough_struct *) malloc (sizeof(borough_struct));
 	borough_map.insert({token, temp_borough});
 	strcpy(temp_borough -> name, token.c_str());
-#ifdef _OPENMP
-	int chunkSize = WEEK_ARRAY_DIM/omp_get_num_threads();
-#endif
-	#pragma omp parallel for schedule(dynamic, chunkSize) shared(temp_borough)
-	for(int i = 0; i < WEEK_ARRAY_DIM; i++) {
-		temp_borough -> weekAccidentsCounter[i] = 0;
-		temp_borough -> weekLethal[i] = 0;
-	}
 	return temp_borough;
 }
 
@@ -109,6 +96,18 @@ factor_struct * getFactor(string token, unordered_map<string, factor_struct *> &
 	temp_factor -> deathsNumber = 0;
 	return temp_factor;
 }
+
+#ifdef _OPENMP
+	void mergeWeekLethalArray(int array[], vector<int *> &vec){
+		int chunkSize = WEEK_ARRAY_DIM/omp_get_num_threads();
+		for(auto elem : vec) {
+			#pragma omp parallel for schedule(dynamic, chunkSize) shared(array, elem)
+			for(int i = 0; i < WEEK_ARRAY_DIM; i++) {
+				array[i] += elem[i];
+			}
+		}
+	}
+#endif
 
 void mergeFactor(factor_struct * f, int dim, unordered_map<string, factor_struct *> &factor_map) {
 	//TODO skippare la porzione della root e diminuire le iterazioni
@@ -132,18 +131,20 @@ void mergeFactor(factor_struct * f, int dim, unordered_map<string, factor_struct
 	}
 }
 
-void mergeFactor(unordered_map<string, factor_struct *> &map_to_be_merged, unordered_map<string, factor_struct *> &map) {
-	for (auto iter = map_to_be_merged.begin(); iter != map_to_be_merged.end(); ++iter) {
-		if(map.find(iter -> first) == map.end())
-			map.insert({iter -> first, iter -> second});
-		else {
-			factor_struct * temp = map.find(iter -> first) -> second;
-			temp -> accidentsNumber += iter -> second -> accidentsNumber;
-			temp -> lethalAccidentsNumber += iter -> second -> lethalAccidentsNumber;
-			temp -> deathsNumber += temp -> deathsNumber;
+#ifdef _OPENMP
+	void mergeFactor(unordered_map<string, factor_struct *> &map_to_be_merged, unordered_map<string, factor_struct *> &map) {
+		for (auto iter = map_to_be_merged.begin(); iter != map_to_be_merged.end(); ++iter) {
+			if(map.find(iter -> first) == map.end())
+				map.insert({iter -> first, iter -> second});
+			else {
+				factor_struct * temp = map.find(iter -> first) -> second;
+				temp -> accidentsNumber += iter -> second -> accidentsNumber;
+				temp -> lethalAccidentsNumber += iter -> second -> lethalAccidentsNumber;
+				temp -> deathsNumber += temp -> deathsNumber;
+			}
 		}
 	}
-}
+#endif
 
 void mergeBorough(borough_struct * b, int dim, unordered_map<string, borough_struct *> &borough_map) {
 	//string token = "";
@@ -168,23 +169,23 @@ void mergeBorough(borough_struct * b, int dim, unordered_map<string, borough_str
 	}
 }
 
-void mergeBorough(unordered_map<string, borough_struct *> &map_to_be_merged, unordered_map<string, borough_struct *> &map) {
-	for(auto iter = map_to_be_merged.begin(); iter != map_to_be_merged.end(); ++iter) {
-		if(map.find(iter -> first) == map.end())
-			map.insert({iter -> first, iter -> second});
-		else {
-			borough_struct * temp = map.find(iter -> first) -> second;
 #ifdef _OPENMP
-			int chunkSize = WEEK_ARRAY_DIM/omp_get_num_threads();
-#endif
-			#pragma omp parallel for schedule(dynamic, chunkSize) shared(temp, iter)
-			for(int k = 0; k < WEEK_ARRAY_DIM; k++) {
-				temp -> weekAccidentsCounter[k] += iter -> second -> weekAccidentsCounter[k];
-				temp -> weekLethal[k] += iter -> second -> weekLethal[k];
+	void mergeBorough(unordered_map<string, borough_struct *> &map_to_be_merged, unordered_map<string, borough_struct *> &map) {
+		for(auto iter = map_to_be_merged.begin(); iter != map_to_be_merged.end(); ++iter) {
+			if(map.find(iter -> first) == map.end())
+				map.insert({iter -> first, iter -> second});
+			else {
+				borough_struct * temp = map.find(iter -> first) -> second;
+				int chunkSize = WEEK_ARRAY_DIM/omp_get_num_threads();
+				#pragma omp parallel for schedule(dynamic, chunkSize) shared(temp, iter)
+				for(int k = 0; k < WEEK_ARRAY_DIM; k++) {
+					temp -> weekAccidentsCounter[k] += iter -> second -> weekAccidentsCounter[k];
+					temp -> weekLethal[k] += iter -> second -> weekLethal[k];
+				}
 			}
 		}
 	}
-}
+#endif
 
 template <typename T>
 void getArrayFromMap(unordered_map<string, T *> &map, T array[]) {
@@ -195,7 +196,7 @@ void getArrayFromMap(unordered_map<string, T *> &map, T array[]) {
 	}
 } 
 
-void parseLine(string line, unordered_map<string, borough_struct *> &borough_map, unordered_map<string, factor_struct *> &factor_map) {
+void parseLine(string line, unordered_map<string, borough_struct *> &borough_map, unordered_map<string, factor_struct *> &factor_map, int weekLethalCounter[]) {
 	stringstream ss(line);
 	string token;
 	string borough = "";
@@ -299,6 +300,11 @@ void printThirdQuery(unordered_map<string, borough_struct *> &borough_map) {
 }
 
 int main(int argc, char * argv[]) {
+	/*	
+	each year is composed at most by 54 week, each week start from sun to sat, 
+	if one year start from saturday the first week is composed by only one day and the first week is burned 
+	*/
+	int weekLethalCounter[WEEK_ARRAY_DIM]; 	
 	int rank, size, i = 0, filesize, starting_offset, limit;
     streampos begin, end;
 	string line;
@@ -366,11 +372,12 @@ int main(int argc, char * argv[]) {
 #ifdef _OPENMP
 	vector< unordered_map<string, factor_struct *> > factor_map_vector;
     vector< unordered_map<string, borough_struct *> > borough_map_vector;
+    vector< int *> week_lethal_vector;
 #endif
     unordered_map<string, factor_struct *> factor_map; //Second query structure
     unordered_map<string, borough_struct *> borough_map; //Third query structure
 
-   	#pragma omp parallel shared (limit, starting_offset, borough_map_vector, factor_map_vector) private (file, line, borough_map, factor_map)
+   	#pragma omp parallel shared (limit, starting_offset, borough_map_vector, factor_map_vector) private (file, line, borough_map, factor_map, weekLethalCounter)
    	{	
    		int private_limit = 0;
 #ifdef _OPENMP
@@ -387,6 +394,10 @@ int main(int argc, char * argv[]) {
    		{
    			factor_map_vector.push_back(factor_map);
    		}
+   		#pragma omp critical (w)
+   		{
+   			week_lethal_vector.push_back(weekLethalCounter);
+   		}
    		#pragma omp critical (out)
    		{
    			cout << "Ci sono " << omp_get_num_threads() << " thread" << endl;
@@ -397,9 +408,9 @@ int main(int argc, char * argv[]) {
     	getline(file,line); //Positioning on the beginning of the next line, 0 skip the header line
 	    while(getline(file,line)) {
 #ifdef _OPENMP
-				parseLine(line, borough_map_vector[omp_get_thread_num()], factor_map_vector[omp_get_thread_num()]);
+			parseLine(line, borough_map_vector[omp_get_thread_num()], factor_map_vector[omp_get_thread_num()], week_lethal_vector[omp_get_thread_num()]);
 #else 
-	    	parseLine(line, borough_map, factor_map);
+	    	parseLine(line, borough_map, factor_map, weekLethalCounter);
 #endif
 	    	if(file.tellg() > limit + private_limit) //if we reach the limit -> exit
 	    		break;
@@ -408,6 +419,7 @@ int main(int argc, char * argv[]) {
 	}
 #ifdef _OPENMP
 	for(int i = 1; i < omp_get_num_threads(); i++) {
+		mergeWeekLethalArray(weekLethalCounter, week_lethal_vector);
 		mergeFactor(factor_map_vector[i], factor_map_vector[0]);
 		mergeBorough(borough_map_vector[i], borough_map_vector[0]);
 	}
