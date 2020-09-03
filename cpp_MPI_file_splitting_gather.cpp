@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <sstream>
 #include <unordered_map>
+#include <vector>
 #include <set>
 #include <chrono>
 #include <mpi.h>
@@ -111,14 +112,14 @@ factor_struct * getFactor(string token, unordered_map<string, factor_struct *> &
 
 void mergeFactor(factor_struct * f, int dim, unordered_map<string, factor_struct *> &factor_map) {
 	//TODO skippare la porzione della root e diminuire le iterazioni
-	string token = "";
+	//string token = "";
 	factor_map.clear();
 
 	for(int i = 0; i < dim ; i++) {
-		//token = f[i].name;
-		for (int j = 0; j < NAME_DIM && f[i].name[j] != '\0'; j++) {
-			token = token + f[i].name[j];
-		}
+		string token(f[i].name);
+		//for (int j = 0; j < NAME_DIM && f[i].name[j] != '\0'; j++) {
+		//	token = token + f[i].name[j];
+		//}
 		if(factor_map.find(token) == factor_map.end())
 			factor_map.insert({token, &f[i]});
 		else {
@@ -126,17 +127,30 @@ void mergeFactor(factor_struct * f, int dim, unordered_map<string, factor_struct
 			temp_factor -> accidentsNumber += f[i].accidentsNumber;
 			temp_factor -> lethalAccidentsNumber += f[i].lethalAccidentsNumber;
 			temp_factor -> deathsNumber += f[i].deathsNumber;
-			factor_map.insert({token, temp_factor});
 		}
-		token = "";
+		//token = "";
+	}
+}
+
+void mergeFactor(unordered_map<string, factor_struct *> &map_to_be_merged, unordered_map<string, factor_struct *> &map) {
+	for (auto iter = map_to_be_merged.begin(); iter != map_to_be_merged.end(); ++iter) {
+		if(map.find(iter -> first) == map.end())
+			map.insert({iter -> first, iter -> second});
+		else {
+			factor_struct * temp = map.find(iter -> first) -> second;
+			temp -> accidentsNumber += iter -> second -> accidentsNumber;
+			temp -> lethalAccidentsNumber += iter -> second -> lethalAccidentsNumber;
+			temp -> deathsNumber += temp -> deathsNumber;
+		}
 	}
 }
 
 void mergeBorough(borough_struct * b, int dim, unordered_map<string, borough_struct *> &borough_map) {
-	string token = "";
+	//string token = "";
 	borough_map.clear();
 	for(int i = 0; i < dim; i++) {
-		token = b[i].name;
+		string token(b[i].name);
+		//token = b[i].name;
 		if(borough_map.find(token) == borough_map.end())
 			borough_map.insert({token, &b[i]});
 		else {
@@ -150,7 +164,25 @@ void mergeBorough(borough_struct * b, int dim, unordered_map<string, borough_str
 				temp_borough -> weekLethal[k] += b[i].weekLethal[k];
 			}
 		}	
-		token = "";	
+		//token = "";	
+	}
+}
+
+void mergeBorough(unordered_map<string, borough_struct *> &map_to_be_merged, unordered_map<string, borough_struct *> &map) {
+	for(auto iter = map_to_be_merged.begin(); iter != map_to_be_merged.end(); ++iter) {
+		if(map.find(iter -> first) == map.end())
+			map.insert({iter -> first, iter -> second});
+		else {
+			borough_struct * temp = map.find(iter -> first) -> second;
+#ifdef _OPENMP
+			int chunkSize = WEEK_ARRAY_DIM/omp_get_num_threads();
+#endif
+			#pragma omp parallel for schedule(dynamic, chunkSize) shared(temp, iter)
+			for(int k = 0; k < WEEK_ARRAY_DIM; k++) {
+				temp -> weekAccidentsCounter[k] += iter -> second -> weekAccidentsCounter[k];
+				temp -> weekLethal[k] += iter -> second -> weekLethal[k];
+			}
+		}
 	}
 }
 
@@ -163,12 +195,12 @@ void getArrayFromMap(unordered_map<string, T *> &map, T array[]) {
 	}
 } 
 
-void parseLine(string line, unordered_map<string, borough_struct *> &borough_map, unordered_map<string, factor_struct *> &factor_map, int rank) {
+void parseLine(string line, unordered_map<string, borough_struct *> &borough_map, unordered_map<string, factor_struct *> &factor_map) {
 	stringstream ss(line);
 	string token;
+	string borough = "";
 	int i = 0, deaths = 0;
 	set<string> factors;
-	borough_struct * temp_borough = NULL;
 	date_struct * date;
 
     while(getline(ss, token, ',') && i < 23) {
@@ -181,10 +213,7 @@ void parseLine(string line, unordered_map<string, borough_struct *> &borough_map
 	    			date = computeDate(token);
 	    			break;
 				case 2: //borough
-					#pragma omp critical (borough_map_interaction) 
-					{
-						temp_borough = getBorough(token, borough_map);
-	    			}
+					borough = token;
 	    			break;
 				case 11:	//death
 				case 13:
@@ -193,16 +222,8 @@ void parseLine(string line, unordered_map<string, borough_struct *> &borough_map
 					break;
 				case 17: //death + borough update
 					deaths += stoi(token);
-					#pragma omp critical (borough_map_interaction) 
-					{
-						if(temp_borough != NULL)
-							temp_borough -> weekAccidentsCounter[date -> index] ++;
-						if(deaths) {
-							if(temp_borough != NULL)
-								temp_borough -> weekLethal[date -> index] ++;
-							weekLethalCounter[date -> index] ++; 
-						}
-					}
+					if(deaths)							
+						weekLethalCounter[date -> index] ++; 
 					break;
 				case 18: //factor1
 				case 19: //factor2
@@ -217,16 +238,21 @@ void parseLine(string line, unordered_map<string, borough_struct *> &borough_map
 	    	}
 	    	i++;
     }
+
+    if(borough.compare("") != 0) {
+   		borough_struct * temp_borough = getBorough(borough, borough_map);
+   		temp_borough -> weekAccidentsCounter[date -> index] ++;
+   		if(deaths)
+   			temp_borough -> weekLethal[date -> index] ++;
+    }
+
     factor_struct * temp_factor;
     for(auto f : factors) {
-		#pragma omp critical (factor_map_interaction) 
-    	{
-	    	temp_factor = getFactor(f, factor_map);
-			temp_factor -> accidentsNumber ++;
-			if(deaths) {
-				temp_factor -> lethalAccidentsNumber++;
-				temp_factor -> deathsNumber += deaths;
-			}
+    	temp_factor = getFactor(f, factor_map);
+		temp_factor -> accidentsNumber++;
+		if(deaths) {
+			temp_factor -> lethalAccidentsNumber++;
+			temp_factor -> deathsNumber += deaths;
 		}
     }
     free(date);
@@ -329,30 +355,65 @@ int main(int argc, char * argv[]) {
     filesize = end-begin;
     starting_offset = filesize/size * rank;
     limit = starting_offset + filesize/size;
+#ifdef _OPENMP   
 	file.close();
+#else
+	file.seekg(starting_offset);
+#endif
 	/*
 	Parse the file until it is finished or the portion's limit is reached
     */
+#ifdef _OPENMP
+	vector< unordered_map<string, factor_struct *> > factor_map_vector;
+    vector< unordered_map<string, borough_struct *> > borough_map_vector;
+#endif
     unordered_map<string, factor_struct *> factor_map; //Second query structure
     unordered_map<string, borough_struct *> borough_map; //Third query structure
 
-   	getline(file,line); //Positioning on the beginning of the next line, 0 skip the header line
-   	#pragma omp parallel shared (limit, starting_offset, borough_map, factor_map) private (line)
+   	#pragma omp parallel shared (limit, starting_offset, borough_map_vector, factor_map_vector) private (file, line, borough_map, factor_map)
    	{	
-   		ifstream private_file;
-   	   	private_file.open("../../NYPD_Motor_Vehicle_Collisions.csv");
+   		int private_limit = 0;
+#ifdef _OPENMP
+   	   	file.open("../../NYPD_Motor_Vehicle_Collisions.csv");
    		int chunkSize = (limit - starting_offset) / omp_get_num_threads();
    		int private_offset = chunkSize  * omp_get_thread_num();
-   		int private_limit = private_offset + chunkSize;
-   		private_file.seekg(starting_offset + private_offset);
-   		getline(private_file, line);
-	    while(getline(private_file,line)) { 
-	    	parseLine(line, borough_map, factor_map, rank);
-	    	if(private_file.tellg() > limit + private_limit) //if we reach the limit -> exit
+   		private_limit = private_offset + chunkSize;
+   		file.seekg(starting_offset + private_offset);
+   		#pragma omp critical (b)
+   		{
+   			borough_map_vector.push_back(borough_map);
+   		}
+   		#pragma omp critical (f)
+   		{
+   			factor_map_vector.push_back(factor_map);
+   		}
+   		#pragma omp critical (out)
+   		{
+   			cout << "Ci sono " << omp_get_num_threads() << " thread" << endl;
+   			cout << "Sono " << rank << "-" << omp_get_thread_num() << " ed ho offset: " << starting_offset + private_offset << endl;
+   		}
+   		#pragma omp barrier
+#endif
+    	getline(file,line); //Positioning on the beginning of the next line, 0 skip the header line
+	    while(getline(file,line)) {
+#ifdef _OPENMP
+				parseLine(line, borough_map_vector[omp_get_thread_num()], factor_map_vector[omp_get_thread_num()]);
+#else 
+	    	parseLine(line, borough_map, factor_map);
+#endif
+	    	if(file.tellg() > limit + private_limit) //if we reach the limit -> exit
 	    		break;
 	    }
-	    private_file.close();
+	    file.close();
 	}
+#ifdef _OPENMP
+	for(int i = 1; i < omp_get_num_threads(); i++) {
+		mergeFactor(factor_map_vector[i], factor_map_vector[0]);
+		mergeBorough(borough_map_vector[i], borough_map_vector[0]);
+	}
+	factor_map = factor_map_vector[0];
+	borough_map = borough_map_vector[0];
+#endif
 	
 	/*
 	Gather for first query
