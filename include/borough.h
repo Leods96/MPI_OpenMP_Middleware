@@ -16,6 +16,8 @@ borough_struct * getBorough(std::string token, std::unordered_map<std::string, b
 void mergeBorough(borough_struct * b, int dim, std::unordered_map<std::string, borough_struct *> &borough_map);
 
 #ifdef _OPENMP
+void mergeBoroughRecursive(borough_struct * f, int dim, std::unordered_map<std::string, borough_struct *> &borough_map);
+
 void mergeBorough(std::unordered_map<std::string, borough_struct *> &map_to_be_merged, std::unordered_map<std::string, borough_struct *> &map);
 #endif
 

@@ -18,6 +18,11 @@ void mergeFactor(factor_struct * f, int dim, std::unordered_map<std::string, fac
 
 #ifdef _OPENMP
 void mergeFactor(std::unordered_map<std::string, factor_struct *> &map_to_be_merged, std::unordered_map<std::string, factor_struct *> &map);
+
+void mergeFactorRecursive(factor_struct * f, int dim, std::unordered_map<std::string, factor_struct *> &factor_map);
+
 #endif
+
+
 
 #endif

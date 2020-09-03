@@ -27,13 +27,11 @@ contains the information on the contributing factor for each line
 */
 
 #ifdef _OPENMP
-	void mergeWeekLethalArray(int array[], vector<int *> &vec){
+	void mergeWeekLethalArray(int array[], vector<int> &vec){
 		int chunkSize = WEEK_ARRAY_DIM/omp_get_num_threads();
-		for(auto elem : vec) {
-			#pragma omp parallel for schedule(dynamic, chunkSize) shared(array, elem)
-			for(int i = 0; i < WEEK_ARRAY_DIM; i++) {
-				array[i] += elem[i];
-			}
+		#pragma omp parallel for schedule(dynamic, chunkSize) shared(array)
+		for(int i = 0; i < WEEK_ARRAY_DIM; i++) {
+			array[i] += vec[i];
 		}
 	}
 #endif
@@ -90,8 +88,7 @@ int main(int argc, char * argv[]) {
 	/*	
 	each year is composed at most by 54 week, each week start from sun to sat, 
 	if one year start from saturday the first week is composed by only one day and the first week is burned 
-	*/
-	int weekLethalCounter[WEEK_ARRAY_DIM]; 	
+	*/ 	
 	int rank, size, i = 0, filesize, starting_offset, limit;
     streampos begin, end;
 	string line;
@@ -163,13 +160,18 @@ int main(int argc, char * argv[]) {
 #ifdef _OPENMP
 	vector< unordered_map<string, factor_struct *> > factor_map_vector;
     vector< unordered_map<string, borough_struct *> > borough_map_vector;
-    vector< int *> week_lethal_vector;
+    vector< vector<int> > week_lethal_vector;
+#else
+	unordered_map<string, factor_struct *> factor_map;
+	unordered_map<string, borough_struct *> borough_map;
+	vector<int> weekLethalCounter;
 #endif
-    unordered_map<string, factor_struct *> factor_map; //Second query structure
-    unordered_map<string, borough_struct *> borough_map; //Third query structure
 
-   	#pragma omp parallel shared (limit, starting_offset, borough_map_vector, factor_map_vector) private (file, line, borough_map, factor_map, weekLethalCounter)
+   	#pragma omp parallel shared (limit, starting_offset, borough_map_vector, factor_map_vector, week_lethal_vector) private (file, line)
    	{	
+		unordered_map<string, factor_struct *> factor_map_local; //Second query structure
+    	unordered_map<string, borough_struct *> borough_map_local; //Third query structure
+		vector<int> weekLethalCounter_local(WEEK_ARRAY_DIM,0);
    		int private_limit = 0;
 #ifdef _OPENMP
    	   	file.open("../../NYPD_Motor_Vehicle_Collisions.csv");
@@ -179,39 +181,50 @@ int main(int argc, char * argv[]) {
    		file.seekg(starting_offset + private_offset);
    		#pragma omp critical (b)
    		{
-   			borough_map_vector.push_back(borough_map);
-   			factor_map_vector.push_back(factor_map);
-   			week_lethal_vector.push_back(weekLethalCounter);
+   			borough_map_vector.push_back(borough_map_local);
+   			factor_map_vector.push_back(factor_map_local);
+   			week_lethal_vector.push_back(weekLethalCounter_local);
    		}
    		#pragma omp barrier
 #endif
     	getline(file,line); //Positioning on the beginning of the next line, 0 skip the header line
 	    while(getline(file,line)) {
 #ifdef _OPENMP
-			parseLine(line, borough_map_vector[omp_get_thread_num()], factor_map_vector[omp_get_thread_num()], week_lethal_vector[omp_get_thread_num()]);
+			parseLine(line, borough_map_vector[omp_get_thread_num()], factor_map_vector[omp_get_thread_num()], &(week_lethal_vector[omp_get_thread_num()][0]));
 #else 
-	    	parseLine(line, borough_map, factor_map, weekLethalCounter);
+	    	parseLine(line, borough_map_local, factor_map_local, &(weekLethalCounter_local[0]));
 #endif
 	    	if(file.tellg() > limit + private_limit) //if we reach the limit -> exit
 	    		break;
 	    }
 	    file.close();
+#ifdef _OPENMP
+#else
+	factor_map = factor_map_local;
+	borough_map = borough_map_local;
+	weekLethalCounter = weekLethalCounter_local;
+#endif
 	}
 #ifdef _OPENMP
-	for(int i = 1; i < omp_get_num_threads(); i++) {
-		mergeWeekLethalArray(weekLethalCounter, week_lethal_vector);
-		mergeFactor(factor_map_vector[i], factor_map_vector[0]);
-		mergeBorough(borough_map_vector[i], borough_map_vector[0]);
+	for(int distance = 1; distance < omp_get_num_threads(); distance *= 2) {
+		#pragma omp parallel for 
+		for(int i = 0; i < omp_get_num_threads() - distance; i += 2 * distance) {
+			mergeWeekLethalArray(&(week_lethal_vector[i][0]), week_lethal_vector[i+distance]);
+			mergeFactor(factor_map_vector[i+distance], factor_map_vector[i]);
+			mergeBorough(borough_map_vector[i+distance], borough_map_vector[i]);
+		}
 	}
-	factor_map = factor_map_vector[0];
-	borough_map = borough_map_vector[0];
+	unordered_map<string, factor_struct *> factor_map = factor_map_vector[0];
+	unordered_map<string, borough_struct *> borough_map = borough_map_vector[0];
+	vector<int> weekLethalCounter = week_lethal_vector[0];
+
 #endif
 	
 	/*
 	Gather for first query
     */
     int first_query_res_buf[WEEK_ARRAY_DIM];
-    MPI_Reduce(weekLethalCounter, first_query_res_buf, WEEK_ARRAY_DIM, MPI_INT, MPI_SUM, root, MPI_COMM_WORLD);
+    MPI_Reduce(&(weekLethalCounter[0]), first_query_res_buf, WEEK_ARRAY_DIM, MPI_INT, MPI_SUM, root, MPI_COMM_WORLD);
 	/*
 	Gatherv for second query
    	*/
@@ -234,7 +247,11 @@ int main(int argc, char * argv[]) {
     MPI_Gatherv(factors_for_gatherv, gather_size, factortype, factor_recv_buf, dimension_array, displ_array, factortype, root, MPI_COMM_WORLD);
    
     if(rank == root)
+//#ifdef _OPENMP
+//		mergeFactorRecursive(factor_recv_buf, recv_buf_dim, factor_map);
+//#else
     	mergeFactor(factor_recv_buf, recv_buf_dim, factor_map);
+//#endif
 	/*
 	Gatherv for third query
     */
@@ -258,7 +275,12 @@ int main(int argc, char * argv[]) {
     MPI_Gatherv(boroughs_for_gatherv, gather_size, boroughtype, borough_recv_buf, dimension_array, displ_array, boroughtype, root, MPI_COMM_WORLD);
 
 	if(rank == root)
-    	mergeBorough(borough_recv_buf, recv_buf_dim, borough_map);
+//#ifdef _OPENMP
+//    	mergeBoroughRecursive(borough_recv_buf, recv_buf_dim, borough_map);
+//#else
+		mergeBorough(borough_recv_buf, recv_buf_dim, borough_map);
+//#endif
+
 	/*
 	Print of the results
 	*/
