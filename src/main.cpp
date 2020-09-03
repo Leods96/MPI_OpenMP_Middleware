@@ -7,95 +7,24 @@
 #include <vector>
 #include <set>
 #include <chrono>
-#include <mpi.h>
-#include <omp.h>
 
-#define WEEK_ARRAY_DIM 324 
-#define YEAR_DIM 54
-#define NAME_DIM 50
+#include <mpi.h>
+#ifdef _OPENMP
+#include <omp.h>
+#endif
+
+#include "constant.h"
+#include "file_management.h"
+#include "date.h"
+#include "borough.h"
+#include "factor.h"
 
 using namespace std;
 
-const int daysInYear[12] = {0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334};
-
-/*
-contains the information on the date for each line
-*/
-typedef struct {
-	int month;
-	int day;
-	int year;
-	int index;
-} date_struct;
 
 /*
 contains the information on the contributing factor for each line
 */
-typedef struct {
-	char name[NAME_DIM];
-	int accidentsNumber;
-	int lethalAccidentsNumber;
-	int deathsNumber;
-} factor_struct;
-
-/*
-contains the information on the borough for each line
-*/
-typedef struct {
-	char name[NAME_DIM];
-	int weekAccidentsCounter[WEEK_ARRAY_DIM];
-	int weekLethal[WEEK_ARRAY_DIM];
-} borough_struct;
-
-date_struct * computeDate(string token) {
-	date_struct * date = (date_struct*) malloc (sizeof(date_struct));
-    stringstream ss(token);
-    getline(ss, token, '/');
-	date -> month = stoi(token);
-    getline(ss, token, '/');
-	date -> day = stoi(token);
-    getline(ss, token, '/');
-	date -> year = stoi(token);
-	int numberOfDays = daysInYear[date -> month - 1] + date -> day;	//week computed starting from 1 gen 2012, 1 week = from sunday to saturday
-	if (date -> month > 1 && (date -> year % 400 == 0 || (date -> year % 4 == 0 && date -> year % 100 != 0))) { //Bisestile
-		numberOfDays++;
-	}
-	int yeardiff = date -> year - 2012; //difference between our year and 2012 that is the base
-	int bisestileyears = 0;
-	int shift = 0;
-	if(yeardiff != 0) {
-		bisestileyears = (yeardiff - 1) / 4 + 1; //+ 1 because the 2012(the base) is bisestile each four years there is the bisetile and the year after there is a shift of 2 day that why diff - 1
-		shift = ((yeardiff - bisestileyears) + (bisestileyears * 2)) % 7;
-	}
-	if(numberOfDays < 7 - shift) //if we are in the first week
-		date -> index = yeardiff * YEAR_DIM;
-	else { //otherwise the computation is done over the rest of the days without the first week
-		numberOfDays -= 7 - shift;
-		date -> index = yeardiff * YEAR_DIM + (int)(numberOfDays / 7) + 1;
-	}
-	return date;
-}
-
-borough_struct * getBorough(string token, unordered_map<string, borough_struct *> &borough_map) {
-	if(borough_map.find(token) != borough_map.end())
-		return borough_map.find(token) -> second;
-	borough_struct * temp_borough = (borough_struct *) malloc (sizeof(borough_struct));
-	borough_map.insert({token, temp_borough});
-	strcpy(temp_borough -> name, token.c_str());
-	return temp_borough;
-}
-
-factor_struct * getFactor(string token, unordered_map<string, factor_struct *> &factor_map) {
-	if(factor_map.find(token) != factor_map.end())
-		return factor_map.find(token) -> second;
-	factor_struct * temp_factor = (factor_struct *) malloc (sizeof(factor_struct));
-	factor_map.insert({token, temp_factor});
-	strcpy(temp_factor -> name, token.c_str());
-	temp_factor -> accidentsNumber = 0;
-	temp_factor -> lethalAccidentsNumber = 0;
-	temp_factor -> deathsNumber = 0;
-	return temp_factor;
-}
 
 #ifdef _OPENMP
 	void mergeWeekLethalArray(int array[], vector<int *> &vec){
@@ -104,84 +33,6 @@ factor_struct * getFactor(string token, unordered_map<string, factor_struct *> &
 			#pragma omp parallel for schedule(dynamic, chunkSize) shared(array, elem)
 			for(int i = 0; i < WEEK_ARRAY_DIM; i++) {
 				array[i] += elem[i];
-			}
-		}
-	}
-#endif
-
-void mergeFactor(factor_struct * f, int dim, unordered_map<string, factor_struct *> &factor_map) {
-	//TODO skippare la porzione della root e diminuire le iterazioni
-	//string token = "";
-	factor_map.clear();
-
-	for(int i = 0; i < dim ; i++) {
-		string token(f[i].name);
-		//for (int j = 0; j < NAME_DIM && f[i].name[j] != '\0'; j++) {
-		//	token = token + f[i].name[j];
-		//}
-		if(factor_map.find(token) == factor_map.end())
-			factor_map.insert({token, &f[i]});
-		else {
-			factor_struct * temp_factor = factor_map.find(token) -> second;
-			temp_factor -> accidentsNumber += f[i].accidentsNumber;
-			temp_factor -> lethalAccidentsNumber += f[i].lethalAccidentsNumber;
-			temp_factor -> deathsNumber += f[i].deathsNumber;
-		}
-		//token = "";
-	}
-}
-
-#ifdef _OPENMP
-	void mergeFactor(unordered_map<string, factor_struct *> &map_to_be_merged, unordered_map<string, factor_struct *> &map) {
-		for (auto iter = map_to_be_merged.begin(); iter != map_to_be_merged.end(); ++iter) {
-			if(map.find(iter -> first) == map.end())
-				map.insert({iter -> first, iter -> second});
-			else {
-				factor_struct * temp = map.find(iter -> first) -> second;
-				temp -> accidentsNumber += iter -> second -> accidentsNumber;
-				temp -> lethalAccidentsNumber += iter -> second -> lethalAccidentsNumber;
-				temp -> deathsNumber += temp -> deathsNumber;
-			}
-		}
-	}
-#endif
-
-void mergeBorough(borough_struct * b, int dim, unordered_map<string, borough_struct *> &borough_map) {
-	//string token = "";
-	borough_map.clear();
-	for(int i = 0; i < dim; i++) {
-		string token(b[i].name);
-		//token = b[i].name;
-		if(borough_map.find(token) == borough_map.end())
-			borough_map.insert({token, &b[i]});
-		else {
-			borough_struct * temp_borough = borough_map.find(token) -> second;
-#ifdef _OPENMP
-			int chunkSize = WEEK_ARRAY_DIM/omp_get_num_threads();
-#endif
-			#pragma omp parallel for schedule(dynamic, chunkSize) shared(temp_borough, b)
-			for(int k = 0; k < WEEK_ARRAY_DIM; k++) {
-				temp_borough -> weekAccidentsCounter[k] += b[i].weekAccidentsCounter[k];
-				temp_borough -> weekLethal[k] += b[i].weekLethal[k];
-			}
-		}	
-		//token = "";	
-	}
-}
-
-#ifdef _OPENMP
-	void mergeBorough(unordered_map<string, borough_struct *> &map_to_be_merged, unordered_map<string, borough_struct *> &map) {
-		for(auto iter = map_to_be_merged.begin(); iter != map_to_be_merged.end(); ++iter) {
-			if(map.find(iter -> first) == map.end())
-				map.insert({iter -> first, iter -> second});
-			else {
-				borough_struct * temp = map.find(iter -> first) -> second;
-				int chunkSize = WEEK_ARRAY_DIM/omp_get_num_threads();
-				#pragma omp parallel for schedule(dynamic, chunkSize) shared(temp, iter)
-				for(int k = 0; k < WEEK_ARRAY_DIM; k++) {
-					temp -> weekAccidentsCounter[k] += iter -> second -> weekAccidentsCounter[k];
-					temp -> weekLethal[k] += iter -> second -> weekLethal[k];
-				}
 			}
 		}
 	}
@@ -196,77 +47,13 @@ void getArrayFromMap(unordered_map<string, T *> &map, T array[]) {
 	}
 } 
 
-void parseLine(string line, unordered_map<string, borough_struct *> &borough_map, unordered_map<string, factor_struct *> &factor_map, int weekLethalCounter[]) {
-	stringstream ss(line);
-	string token;
-	string borough = "";
-	int i = 0, deaths = 0;
-	set<string> factors;
-	date_struct * date;
-
-    while(getline(ss, token, ',') && i < 23) {
-    	if(token[0] == '"') {
-    		while(token[token.length()-1] != '"')
-    			getline(ss, token, ',');
-    	} else if(token.compare("") != 0)
-	    	switch(i) {
-	    		case 0: //date
-	    			date = computeDate(token);
-	    			break;
-				case 2: //borough
-					borough = token;
-	    			break;
-				case 11:	//death
-				case 13:
-				case 15:
-					deaths += stoi(token);
-					break;
-				case 17: //death + borough update
-					deaths += stoi(token);
-					if(deaths)							
-						weekLethalCounter[date -> index] ++; 
-					break;
-				case 18: //factor1
-				case 19: //factor2
-				case 20: //factor3
-				case 21: //factor4
-				case 22: //factor5
-					factors.insert(token);
-					break;
-				default:
-				//do nothing
-					break;
-	    	}
-	    	i++;
-    }
-
-    if(borough.compare("") != 0) {
-   		borough_struct * temp_borough = getBorough(borough, borough_map);
-   		temp_borough -> weekAccidentsCounter[date -> index] ++;
-   		if(deaths)
-   			temp_borough -> weekLethal[date -> index] ++;
-    }
-
-    factor_struct * temp_factor;
-    for(auto f : factors) {
-    	temp_factor = getFactor(f, factor_map);
-		temp_factor -> accidentsNumber++;
-		if(deaths) {
-			temp_factor -> lethalAccidentsNumber++;
-			temp_factor -> deathsNumber += deaths;
-		}
-    }
-    free(date);
-    factors.clear();
-}
-
-void printFirstQuery(int result[WEEK_ARRAY_DIM]) {
+void printFirstQuery(int result[]) {
 	cout << "----------------------------First query----------------------------" << endl << endl;
 	for(int i = 0; i < WEEK_ARRAY_DIM; i++) {
 		if(i % YEAR_DIM == 0)
 			cout << 2012 + (i / YEAR_DIM) << " :" << endl;
 		if(result[i] != 0)
-			cout << "\t - week " << (i % YEAR_DIM) + 1 << " : " << result[i] << "death" << endl;
+			cout << "\t - week " << (i % YEAR_DIM) + 1 << " : " << result[i] << " death" << endl;
 	}
 }
 
@@ -330,8 +117,12 @@ int main(int argc, char * argv[]) {
     dispb[1] = reinterpret_cast<std::uintptr_t>(&b -> weekAccidentsCounter) - reinterpret_cast<std::uintptr_t>(b);
     dispb[2] = reinterpret_cast<std::uintptr_t>(&b -> weekLethal) - reinterpret_cast<std::uintptr_t>(b);
 
+#ifdef _OPENMP
+	int provided;
+	MPI_Init_thread(&argc, &argv, MPI_THREAD_FUNNELED, &provided);
+#else
     MPI_Init(&argc, &argv); //MPI Initialization
-
+#endif
     /*
     new datatype creation and commit 
     */
@@ -389,19 +180,8 @@ int main(int argc, char * argv[]) {
    		#pragma omp critical (b)
    		{
    			borough_map_vector.push_back(borough_map);
-   		}
-   		#pragma omp critical (f)
-   		{
    			factor_map_vector.push_back(factor_map);
-   		}
-   		#pragma omp critical (w)
-   		{
    			week_lethal_vector.push_back(weekLethalCounter);
-   		}
-   		#pragma omp critical (out)
-   		{
-   			cout << "Ci sono " << omp_get_num_threads() << " thread" << endl;
-   			cout << "Sono " << rank << "-" << omp_get_thread_num() << " ed ho offset: " << starting_offset + private_offset << endl;
    		}
    		#pragma omp barrier
 #endif
@@ -482,7 +262,6 @@ int main(int argc, char * argv[]) {
 	/*
 	Print of the results
 	*/
-	MPI_Finalize();
 	if(rank == 0) {
 	    auto stop = chrono::high_resolution_clock::now();
 
@@ -493,5 +272,6 @@ int main(int argc, char * argv[]) {
 	    auto duration = chrono::duration_cast<chrono::milliseconds>(stop - start);
 	    cout << "Execution time = " << duration.count() << " milliseconds" << endl;
 	}
+	MPI_Finalize();
 	return 0;
 }
