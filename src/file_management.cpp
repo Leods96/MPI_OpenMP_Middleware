@@ -70,6 +70,4 @@ void parseLine(string line, unordered_map<string, borough_struct *> &borough_map
 			temp_factor -> deathsNumber += deaths;
 		}
     }
-    free(date);
-    factors.clear();
 }

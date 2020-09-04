@@ -12,6 +12,8 @@
 #include <omp.h>
 #endif
 
+extern int threadnum;
+
 using namespace std;
 
 /*
@@ -21,7 +23,7 @@ contains the information on the borough for each line
 borough_struct * getBorough(string token, unordered_map<string, borough_struct *> &borough_map) {
 	if(borough_map.find(token) != borough_map.end())
 		return borough_map.find(token) -> second;
-	borough_struct * temp_borough = (borough_struct *) malloc (sizeof(borough_struct));
+	borough_struct * temp_borough = new borough_struct();
 	borough_map.insert({token, temp_borough});
 	strcpy(temp_borough -> name, token.c_str());
 	return temp_borough;
@@ -37,10 +39,7 @@ void mergeBorough(borough_struct * b, int dim, unordered_map<string, borough_str
 			borough_map.insert({token, &b[i]});
 		else {
 			borough_struct * temp_borough = borough_map.find(token) -> second;
-#ifdef _OPENMP
-			int chunkSize = WEEK_ARRAY_DIM/omp_get_num_threads();
-#endif
-			#pragma omp parallel for schedule(dynamic, chunkSize) shared(temp_borough, b)
+			#pragma omp parallel for shared(temp_borough, b)
 			for(int k = 0; k < WEEK_ARRAY_DIM; k++) {
 				temp_borough -> weekAccidentsCounter[k] += b[i].weekAccidentsCounter[k];
 				temp_borough -> weekLethal[k] += b[i].weekLethal[k];
@@ -55,66 +54,26 @@ void mergeBoroughRecursive(borough_struct * f, int dim, unordered_map<string, bo
     vector<unordered_map<string, borough_struct *>> borough_map_array;
     #pragma omp parallel
     {
-        int split_dimension = dim / omp_get_num_threads();
+        int split_dimension = dim / threadnum;
         int displacement = split_dimension * omp_get_thread_num();
-        if(omp_get_thread_num() == omp_get_num_threads() - 1)
-            split_dimension += dim - (split_dimension * omp_get_num_threads());
+        if(omp_get_thread_num() == threadnum - 1)
+            split_dimension += dim - (split_dimension * threadnum);
         borough_struct * starting_point = &f[displacement];   
         unordered_map<string, borough_struct *> borough_map_local;
         mergeBorough(starting_point, split_dimension, borough_map_local);
-            //TODO remove for debug
 
-        #pragma omp critical (debug)
-        {
-            cout << "Pre push_back - Sono " << omp_get_thread_num() << " map_dimension: " << borough_map_local.size() << endl;
-		    set<string> bor;
-		    for(auto i = borough_map_local.begin(); i != borough_map_local.end(); ++i) {
-		    	bor.insert(i -> first);
-		    }
-		    for(auto s : bor)
-		    	cout << s << endl;
-		    cout << endl << endl;
-        }  
-        			//TILL here
         #pragma omp critical (push)
         {
             borough_map_array.push_back(borough_map_local);
         }
-            //TODO remove for debug        
-        #pragma omp critical (debug)
-        {
-            cout << "Post push_back - Sono " << omp_get_thread_num() << endl;
 
-		    set<string> bor;
-		    for(auto i : borough_map_array) {
-		    	for(auto iter = i.begin(); iter != i.end(); ++iter) {
-		    		bor.insert(iter -> first);
-		    }
-		    }
-		    for(auto s : bor)
-		    	cout << s << endl;
-		    cout << endl << endl;
-        }  
-        			//TILL here
-    }
-    cout << "borough_map_array_size:  " << borough_map_array.size() << endl;    
-    for(int distance = 1; distance < omp_get_num_threads(); distance *= 2) {
+    }    
+    for(int distance = 1; distance < threadnum; distance *= 2) {
 		#pragma omp parallel for 
-		for(int i = 0; i < omp_get_num_threads() - distance; i += 2 * distance) {
+		for(int i = 0; i < threadnum - distance; i += 2 * distance) {
 			mergeBorough(borough_map_array[i+distance], borough_map_array[i]);
 		}
 	}
-	            //TODO remove for debug        
-            cout << "End function " << endl;
-
-		    set<string> bor;
-		    	for(auto iter = borough_map_array[0].begin(); iter != borough_map_array[0].end(); ++iter) {
-		    		bor.insert(iter -> first);
-		    }
-		    for(auto s : bor)
-		    	cout << s << endl;
-		    cout << endl << endl;  
-        			//TILL here
 	borough_map = borough_map_array[0];
 }
 #endif
@@ -126,8 +85,7 @@ void mergeBoroughRecursive(borough_struct * f, int dim, unordered_map<string, bo
 				map.insert({iter -> first, iter -> second});
 			else {
 				borough_struct * temp = map.find(iter -> first) -> second;
-				int chunkSize = WEEK_ARRAY_DIM/omp_get_num_threads();
-				#pragma omp parallel for schedule(dynamic, chunkSize) shared(temp, iter)
+				#pragma omp parallel for shared(temp, iter)
 				for(int k = 0; k < WEEK_ARRAY_DIM; k++) {
 					temp -> weekAccidentsCounter[k] += iter -> second -> weekAccidentsCounter[k];
 					temp -> weekLethal[k] += iter -> second -> weekLethal[k];

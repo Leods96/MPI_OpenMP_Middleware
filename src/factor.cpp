@@ -7,6 +7,7 @@
 #include <omp.h>
 #endif
 
+extern int threadnum;
 
 #include "factor.h"
 
@@ -15,7 +16,7 @@ using namespace std;
 factor_struct * getFactor(string token, unordered_map<string, factor_struct *> &factor_map) {
 	if(factor_map.find(token) != factor_map.end())
 		return factor_map.find(token) -> second;
-	factor_struct * temp_factor = (factor_struct *) malloc (sizeof(factor_struct));
+	factor_struct * temp_factor = new factor_struct();
 	factor_map.insert({token, temp_factor});
 	strcpy(temp_factor -> name, token.c_str());
 	temp_factor -> accidentsNumber = 0;
@@ -51,10 +52,10 @@ void mergeFactorRecursive(factor_struct * f, int dim, unordered_map<string, fact
     vector<unordered_map<string, factor_struct *>> factor_map_array;
     #pragma omp parallel
     {	
-        int split_dimension = dim / omp_get_num_threads();
+        int split_dimension = dim / threadnum;
         int displacement = split_dimension * omp_get_thread_num();
-        if(omp_get_thread_num() == omp_get_num_threads() - 1)
-            split_dimension += dim - (split_dimension * omp_get_num_threads());
+        if(omp_get_thread_num() == threadnum - 1)
+            split_dimension += dim - (split_dimension * threadnum);
         factor_struct * starting_point = &f[displacement];
         unordered_map<string, factor_struct *> factor_map_local;
         mergeFactor(starting_point, split_dimension, factor_map_local);
@@ -63,9 +64,9 @@ void mergeFactorRecursive(factor_struct * f, int dim, unordered_map<string, fact
             factor_map_array.push_back(factor_map_local);
         }
     }
-    for(int distance = 1; distance < omp_get_num_threads(); distance *= 2) {
+    for(int distance = 1; distance < threadnum; distance *= 2) {
 		#pragma omp parallel for 
-		for(int i = 0; i < omp_get_num_threads() - distance; i += 2 * distance) {
+		for(int i = 0; i < threadnum - distance; i += 2 * distance) {
 			mergeFactor(factor_map_array[i+distance], factor_map_array[i]);
 		}
 	}

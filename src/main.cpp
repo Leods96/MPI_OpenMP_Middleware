@@ -21,15 +21,14 @@
 
 using namespace std;
 
-
+int threadnum;
 /*
 contains the information on the contributing factor for each line
 */
 
 #ifdef _OPENMP
 	void mergeWeekLethalArray(int array[], vector<int> &vec){
-		int chunkSize = WEEK_ARRAY_DIM/omp_get_num_threads();
-		#pragma omp parallel for schedule(dynamic, chunkSize) shared(array)
+		#pragma omp parallel for shared(array)
 		for(int i = 0; i < WEEK_ARRAY_DIM; i++) {
 			array[i] += vec[i];
 		}
@@ -91,7 +90,6 @@ int main(int argc, char * argv[]) {
 	*/ 	
 	int rank, size, i = 0, filesize, starting_offset, limit;
     streampos begin, end;
-	string line;
 
 	/*
 	Setup for datatype creation, used during the gatherv to pass complex data
@@ -105,6 +103,8 @@ int main(int argc, char * argv[]) {
     factor_struct * f;
     borough_struct * b;
 
+	auto start = chrono::high_resolution_clock::now();
+
     dispf[0] = reinterpret_cast<std::uintptr_t>(f -> name) - reinterpret_cast<std::uintptr_t>(f);
 	dispf[1] = reinterpret_cast<std::uintptr_t>(&f -> accidentsNumber) - reinterpret_cast<std::uintptr_t>(f);
     dispf[2] = reinterpret_cast<std::uintptr_t>(&f -> lethalAccidentsNumber) - reinterpret_cast<std::uintptr_t>(f);
@@ -114,12 +114,8 @@ int main(int argc, char * argv[]) {
     dispb[1] = reinterpret_cast<std::uintptr_t>(&b -> weekAccidentsCounter) - reinterpret_cast<std::uintptr_t>(b);
     dispb[2] = reinterpret_cast<std::uintptr_t>(&b -> weekLethal) - reinterpret_cast<std::uintptr_t>(b);
 
-#ifdef _OPENMP
-	int provided;
-	MPI_Init_thread(&argc, &argv, MPI_THREAD_FUNNELED, &provided);
-#else
     MPI_Init(&argc, &argv); //MPI Initialization
-#endif
+
     /*
     new datatype creation and commit 
     */
@@ -130,6 +126,7 @@ int main(int argc, char * argv[]) {
 
     MPI_Comm_size(MPI_COMM_WORLD, &size);
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
 	int root = 0; 
 
    	ifstream file; 
@@ -138,7 +135,9 @@ int main(int argc, char * argv[]) {
         cout << "Can not open file" << endl;
         return -1;
     }
-	auto start = chrono::high_resolution_clock::now();
+
+	auto setup = chrono::high_resolution_clock::now();
+	// BEGIN OF FILE PARSING, END OF SETUP
 
 	/*
 	Calculation of the file size in order to spli the data between the processes
@@ -166,16 +165,20 @@ int main(int argc, char * argv[]) {
 	unordered_map<string, borough_struct *> borough_map;
 	vector<int> weekLethalCounter;
 #endif
-
-   	#pragma omp parallel shared (limit, starting_offset, borough_map_vector, factor_map_vector, week_lethal_vector) private (file, line)
+   	#pragma omp parallel shared (limit, starting_offset, borough_map_vector, factor_map_vector, week_lethal_vector) private (file)
    	{	
+		#ifdef _OPENMP
+		threadnum = omp_get_num_threads();
+		#endif
+
+		string line;
 		unordered_map<string, factor_struct *> factor_map_local; //Second query structure
     	unordered_map<string, borough_struct *> borough_map_local; //Third query structure
 		vector<int> weekLethalCounter_local(WEEK_ARRAY_DIM,0);
    		int private_limit = 0;
 #ifdef _OPENMP
    	   	file.open("../../NYPD_Motor_Vehicle_Collisions.csv");
-   		int chunkSize = (limit - starting_offset) / omp_get_num_threads();
+   		int chunkSize = (limit - starting_offset) / threadnum;
    		int private_offset = chunkSize  * omp_get_thread_num();
    		private_limit = private_offset + chunkSize;
    		file.seekg(starting_offset + private_offset);
@@ -205,10 +208,14 @@ int main(int argc, char * argv[]) {
 	weekLethalCounter = weekLethalCounter_local;
 #endif
 	}
+
+	auto file_parsing = chrono::high_resolution_clock::now();
+	//END OF FILE PARSING; BEGINNING OF MERGE
+
 #ifdef _OPENMP
-	for(int distance = 1; distance < omp_get_num_threads(); distance *= 2) {
+	for(int distance = 1; distance < threadnum; distance *= 2) {
 		#pragma omp parallel for 
-		for(int i = 0; i < omp_get_num_threads() - distance; i += 2 * distance) {
+		for(int i = 0; i < threadnum - distance; i += 2 * distance) {
 			mergeWeekLethalArray(&(week_lethal_vector[i][0]), week_lethal_vector[i+distance]);
 			mergeFactor(factor_map_vector[i+distance], factor_map_vector[i]);
 			mergeBorough(borough_map_vector[i+distance], borough_map_vector[i]);
@@ -281,19 +288,36 @@ int main(int argc, char * argv[]) {
 		mergeBorough(borough_recv_buf, recv_buf_dim, borough_map);
 #endif
 
+	auto merge = chrono::high_resolution_clock::now();
+	//END OF MERGE, BEGINNING OF PRINT
+
 	/*
 	Print of the results
 	*/
-	if(rank == 0) {
-	    auto stop = chrono::high_resolution_clock::now();
+	if(rank == root) {
+	    
 
-	    //printFirstQuery(first_query_res_buf);
-	    //printSecondQuery(factor_map);
-	    //printThirdQuery(borough_map);
+	    printFirstQuery(first_query_res_buf);
+	    printSecondQuery(factor_map);
+	    printThirdQuery(borough_map);
+		auto print = chrono::high_resolution_clock::now();
 
-	    auto duration = chrono::duration_cast<chrono::milliseconds>(stop - start);
-	    cout << "Execution time = " << duration.count() << " milliseconds" << endl;
+	    auto setup_duration = chrono::duration_cast<chrono::milliseconds>(setup - start);
+		auto file_duration = chrono::duration_cast<chrono::milliseconds>(file_parsing - setup);
+		auto merge_duration = chrono::duration_cast<chrono::milliseconds>(merge - file_parsing);
+		auto print_duration = chrono::duration_cast<chrono::milliseconds>(print - merge);
+		auto total_duration = chrono::duration_cast<chrono::milliseconds>(print - start);
+
+		cout << endl;
+	    cout << "Setup time        = " << setup_duration.count() << " milliseconds" << endl;
+		cout << "File parsing time = " << file_duration.count() << " milliseconds" << endl;
+		cout << "Data merge time   = " << merge_duration.count() << " milliseconds" << endl;
+		cout << "Printing time     = " << print_duration.count() << " milliseconds" << endl;
+		cout << endl;
+		cout << "Total time        = " << total_duration.count() << " milliseconds" << endl;
+	
 	}
 	MPI_Finalize();
+
 	return 0;
 }

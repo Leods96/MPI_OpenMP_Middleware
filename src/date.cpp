@@ -5,7 +5,7 @@
 #include "date.h"
 
 date_struct * computeDate(std::string token) {
-	date_struct * date = (date_struct*) malloc (sizeof(date_struct));
+	date_struct * date = new date_struct();
     std::stringstream ss(token);
     getline(ss, token, '/');
 	date -> month = stoi(token);
