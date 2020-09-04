@@ -50,11 +50,12 @@ void mergeFactor(factor_struct * f, int dim, unordered_map<string, factor_struct
 void mergeFactorRecursive(factor_struct * f, int dim, unordered_map<string, factor_struct *> &factor_map) {
     vector<unordered_map<string, factor_struct *>> factor_map_array;
     #pragma omp parallel
-    {
+    {	
         int split_dimension = dim / omp_get_num_threads();
+        int displacement = split_dimension * omp_get_thread_num();
         if(omp_get_thread_num() == omp_get_num_threads() - 1)
             split_dimension += dim - (split_dimension * omp_get_num_threads());
-        factor_struct * starting_point = &(f[(split_dimension) * omp_get_thread_num()]);
+        factor_struct * starting_point = &f[displacement];
         unordered_map<string, factor_struct *> factor_map_local;
         mergeFactor(starting_point, split_dimension, factor_map_local);
         #pragma omp critical

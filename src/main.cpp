@@ -247,11 +247,11 @@ int main(int argc, char * argv[]) {
     MPI_Gatherv(factors_for_gatherv, gather_size, factortype, factor_recv_buf, dimension_array, displ_array, factortype, root, MPI_COMM_WORLD);
    
     if(rank == root)
-//#ifdef _OPENMP
-//		mergeFactorRecursive(factor_recv_buf, recv_buf_dim, factor_map);
-//#else
+#ifdef _OPENMP
+		mergeFactorRecursive(factor_recv_buf, recv_buf_dim, factor_map);
+#else
     	mergeFactor(factor_recv_buf, recv_buf_dim, factor_map);
-//#endif
+#endif
 	/*
 	Gatherv for third query
     */
@@ -275,11 +275,11 @@ int main(int argc, char * argv[]) {
     MPI_Gatherv(boroughs_for_gatherv, gather_size, boroughtype, borough_recv_buf, dimension_array, displ_array, boroughtype, root, MPI_COMM_WORLD);
 
 	if(rank == root)
-//#ifdef _OPENMP
-//    	mergeBoroughRecursive(borough_recv_buf, recv_buf_dim, borough_map);
-//#else
+#ifdef _OPENMP
+    	mergeBoroughRecursive(borough_recv_buf, recv_buf_dim, borough_map);
+#else
 		mergeBorough(borough_recv_buf, recv_buf_dim, borough_map);
-//#endif
+#endif
 
 	/*
 	Print of the results
@@ -287,9 +287,9 @@ int main(int argc, char * argv[]) {
 	if(rank == 0) {
 	    auto stop = chrono::high_resolution_clock::now();
 
-	    printFirstQuery(first_query_res_buf);
-	    printSecondQuery(factor_map);
-	    printThirdQuery(borough_map);
+	    //printFirstQuery(first_query_res_buf);
+	    //printSecondQuery(factor_map);
+	    //printThirdQuery(borough_map);
 
 	    auto duration = chrono::duration_cast<chrono::milliseconds>(stop - start);
 	    cout << "Execution time = " << duration.count() << " milliseconds" << endl;
