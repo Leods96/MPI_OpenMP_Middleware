@@ -29,22 +29,21 @@ void mergeFactor(factor_struct * f, int dim, unordered_map<string, factor_struct
     //TODO skippare la porzione della root e diminuire le iterazioni
 	//string token = "";
 	factor_map.clear();
-    for(int distance = 1; distance < dim; distance *= 2)
-        for(int i = 0; i < dim - distance ; i += distance * 2) {
-            string token(f[i].name);
-            //for (int j = 0; j < NAME_DIM && f[i].name[j] != '\0'; j++) {
-            //	token = token + f[i].name[j];
-            //}
-            if(factor_map.find(token) == factor_map.end())
-                factor_map.insert({token, &f[i]});
-            else {
-                factor_struct * temp_factor = factor_map.find(token) -> second;
-                temp_factor -> accidentsNumber += f[i].accidentsNumber;
-                temp_factor -> lethalAccidentsNumber += f[i].lethalAccidentsNumber;
-                temp_factor -> deathsNumber += f[i].deathsNumber;
-            }
-            //token = "";
+    for(int i = 0; i < dim; i++) {
+        string token(f[i].name);
+        //for (int j = 0; j < NAME_DIM && f[i].name[j] != '\0'; j++) {
+        //	token = token + f[i].name[j];
+        //}
+        if(factor_map.find(token) == factor_map.end())
+            factor_map.insert({token, &f[i]});
+        else {
+            factor_struct * temp_factor = factor_map.find(token) -> second;
+            temp_factor -> accidentsNumber += f[i].accidentsNumber;
+            temp_factor -> lethalAccidentsNumber += f[i].lethalAccidentsNumber;
+            temp_factor -> deathsNumber += f[i].deathsNumber;
         }
+        //token = "";
+    }
 }
 
 #ifdef _OPENMP
