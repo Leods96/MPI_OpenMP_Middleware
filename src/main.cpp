@@ -22,6 +22,11 @@
 using namespace std;
 
 int threadnum;
+
+//TODO check limits of thread/process part (last read by noone),
+//TODO check WEEK_ARRAY_DIM not to overflow
+//TODO allow namefile from command line
+
 /*
 contains the information on the contributing factor for each line
 */
@@ -175,12 +180,12 @@ int main(int argc, char * argv[]) {
 		unordered_map<string, factor_struct *> factor_map_local; //Second query structure
     	unordered_map<string, borough_struct *> borough_map_local; //Third query structure
 		vector<int> weekLethalCounter_local(WEEK_ARRAY_DIM,0);
-   		int private_limit = 0;
+   		int private_limit = limit;
 #ifdef _OPENMP
    	   	file.open("../../NYPD_Motor_Vehicle_Collisions.csv");
    		int chunkSize = (limit - starting_offset) / threadnum;
    		int private_offset = chunkSize  * omp_get_thread_num();
-   		private_limit = private_offset + chunkSize;
+   		private_limit = starting_offset + private_offset + chunkSize;
    		file.seekg(starting_offset + private_offset);
    		#pragma omp critical (b)
    		{
@@ -197,7 +202,7 @@ int main(int argc, char * argv[]) {
 #else 
 	    	parseLine(line, borough_map_local, factor_map_local, &(weekLethalCounter_local[0]));
 #endif
-	    	if(file.tellg() > limit + private_limit) //if we reach the limit -> exit
+	    	if(file.tellg() > private_limit) //if we reach the limit -> exit
 	    		break;
 	    }
 	    file.close();
