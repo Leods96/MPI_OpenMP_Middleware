@@ -3,6 +3,7 @@
 #include <sstream>
 #include <stdio.h>
 #include "date.h"
+#include "constant.h"
 
 date_struct * computeDate(std::string token) {
 	date_struct * date = new date_struct();
@@ -17,7 +18,7 @@ date_struct * computeDate(std::string token) {
 	if (date -> month > 1 && (date -> year % 400 == 0 || (date -> year % 4 == 0 && date -> year % 100 != 0))) { //Bisestile
 		numberOfDays++;
 	}
-	int yeardiff = date -> year - 2012; //difference between our year and 2012 that is the base
+	int yeardiff = date -> year - BASE_YEAR; //difference between our year and base
 	int bisestileyears = 0;
 	int shift = 0;
 	if(yeardiff != 0) {
@@ -30,5 +31,7 @@ date_struct * computeDate(std::string token) {
 		numberOfDays -= 7 - shift;
 		date -> index = yeardiff * YEAR_DIM + (int)(numberOfDays / 7) + 1;
 	}
+	if(yeardiff < 0 || date->index >= WEEK_ARRAY_DIM)
+		date->index = -1;
 	return date;
 }

@@ -6,6 +6,6 @@
 #include "factor.h"
 #include "borough.h"
 
-void parseLine(std::string line, std::unordered_map<std::string, borough_struct *> &borough_map, std::unordered_map<std::string, factor_struct *> &factor_map, int weekLethalCounter[]);
+int parseLine(std::string line, std::unordered_map<std::string, borough_struct *> &borough_map, std::unordered_map<std::string, factor_struct *> &factor_map, int weekLethalCounter[]);
 
 #endif

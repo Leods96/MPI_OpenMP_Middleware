@@ -22,10 +22,10 @@
 using namespace std;
 
 int threadnum;
+bool do_first_query;
+bool do_second_query;
+bool do_third_query;
 
-//TODO check limits of thread/process part (last read by noone),
-//TODO check WEEK_ARRAY_DIM not to overflow
-//TODO allow namefile from command line
 
 /*
 contains the information on the contributing factor for each line
@@ -94,6 +94,7 @@ int main(int argc, char * argv[]) {
 	if one year start from saturday the first week is composed by only one day and the first week is burned 
 	*/ 	
 	int rank, size, i = 0, filesize, starting_offset, limit;
+	int oob = 0;
     streampos begin, end;
 
 	/*
@@ -121,13 +122,41 @@ int main(int argc, char * argv[]) {
 
     MPI_Init(&argc, &argv); //MPI Initialization
 
+	string filename = "../../NYPD_Motor_Vehicle_Collisions.csv";
+	do_first_query = true;
+	do_second_query = true;
+	do_third_query = true;
+	if(argc == 2)
+	{
+		filename = argv[1];
+	}
+	if(argc == 4)
+	{
+		do_first_query = (atoi(argv[1]) == 1);
+		do_second_query = (atoi(argv[2]) == 1);
+		do_third_query = (atoi(argv[3]) == 1);
+	}
+	if(argc == 5)
+	{
+		filename = argv[1];
+		do_first_query = (atoi(argv[1]) == 1);
+		do_second_query = (atoi(argv[2]) == 1);
+		do_third_query = (atoi(argv[3]) == 1);
+	}
+
     /*
     new datatype creation and commit 
     */
-    MPI_Type_create_struct(4, blocklenf, dispf, typef, &factortype);
-    MPI_Type_commit(&factortype);
-    MPI_Type_create_struct(3, blocklenb, dispb, typeb, &boroughtype);
-    MPI_Type_commit(&boroughtype);
+    if(do_second_query)
+    {
+		MPI_Type_create_struct(4, blocklenf, dispf, typef, &factortype);
+    	MPI_Type_commit(&factortype);
+	}
+	if(do_third_query)
+	{
+		MPI_Type_create_struct(3, blocklenb, dispb, typeb, &boroughtype);
+		MPI_Type_commit(&boroughtype);
+	}
 
     MPI_Comm_size(MPI_COMM_WORLD, &size);
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
@@ -135,7 +164,7 @@ int main(int argc, char * argv[]) {
 	int root = 0; 
 
    	ifstream file; 
-   	file.open("../../NYPD_Motor_Vehicle_Collisions.csv");
+   	file.open(filename);
     if (!file.is_open()) {
         cout << "Can not open file" << endl;
         return -1;
@@ -152,7 +181,10 @@ int main(int argc, char * argv[]) {
     end = file.tellg();
     filesize = end-begin;
     starting_offset = filesize/size * rank;
-    limit = starting_offset + filesize/size;
+	if(rank == size - 1)
+		limit = filesize;
+	else
+    	limit = starting_offset + filesize/size;
 #ifdef _OPENMP   
 	file.close();
 #else
@@ -182,10 +214,13 @@ int main(int argc, char * argv[]) {
 		vector<int> weekLethalCounter_local(WEEK_ARRAY_DIM,0);
    		int private_limit = limit;
 #ifdef _OPENMP
-   	   	file.open("../../NYPD_Motor_Vehicle_Collisions.csv");
+   	   	file.open(filename);
    		int chunkSize = (limit - starting_offset) / threadnum;
    		int private_offset = chunkSize  * omp_get_thread_num();
-   		private_limit = starting_offset + private_offset + chunkSize;
+		if(omp_get_thread_num() == threadnum - 1)
+			private_limit = limit;
+		else
+   			private_limit = starting_offset + private_offset + chunkSize;
    		file.seekg(starting_offset + private_offset);
    		#pragma omp critical (b)
    		{
@@ -198,11 +233,17 @@ int main(int argc, char * argv[]) {
     	getline(file,line); //Positioning on the beginning of the next line, 0 skip the header line
 	    while(getline(file,line)) {
 #ifdef _OPENMP
-			parseLine(line, borough_map_vector[omp_get_thread_num()], factor_map_vector[omp_get_thread_num()], &(week_lethal_vector[omp_get_thread_num()][0]));
+			oob = parseLine(line, borough_map_vector[omp_get_thread_num()], factor_map_vector[omp_get_thread_num()], &(week_lethal_vector[omp_get_thread_num()][0]));
 #else 
-	    	parseLine(line, borough_map_local, factor_map_local, &(weekLethalCounter_local[0]));
+	    	oob = parseLine(line, borough_map_local, factor_map_local, &(weekLethalCounter_local[0]));
 #endif
-	    	if(file.tellg() > private_limit) //if we reach the limit -> exit
+			if(oob != 0)
+			{
+				cout << "Year " << oob << " is present in the DB but not supported" << endl;
+				cout << "Years supported go from " << BASE_YEAR << " up to " << WEEK_ARRAY_DIM << " weeks later" << endl;
+				break;
+			}
+			if(file.tellg() > private_limit) //if we reach the limit -> exit
 	    		break;
 	    }
 	    file.close();
@@ -213,6 +254,8 @@ int main(int argc, char * argv[]) {
 	weekLethalCounter = weekLethalCounter_local;
 #endif
 	}
+	if (oob != 0)
+		MPI_Abort(MPI_COMM_WORLD, -1);
 
 	auto file_parsing = chrono::high_resolution_clock::now();
 	//END OF FILE PARSING; BEGINNING OF MERGE
@@ -221,9 +264,12 @@ int main(int argc, char * argv[]) {
 	for(int distance = 1; distance < threadnum; distance *= 2) {
 		#pragma omp parallel for 
 		for(int i = 0; i < threadnum - distance; i += 2 * distance) {
-			mergeWeekLethalArray(&(week_lethal_vector[i][0]), week_lethal_vector[i+distance]);
-			mergeFactor(factor_map_vector[i+distance], factor_map_vector[i]);
-			mergeBorough(borough_map_vector[i+distance], borough_map_vector[i]);
+			if(do_first_query)
+				mergeWeekLethalArray(&(week_lethal_vector[i][0]), week_lethal_vector[i+distance]);
+			if(do_second_query)
+				mergeFactor(factor_map_vector[i+distance], factor_map_vector[i]);
+			if(do_third_query)
+				mergeBorough(borough_map_vector[i+distance], borough_map_vector[i]);
 		}
 	}
 	unordered_map<string, factor_struct *> factor_map = factor_map_vector[0];
@@ -236,62 +282,75 @@ int main(int argc, char * argv[]) {
 	Gather for first query
     */
     int first_query_res_buf[WEEK_ARRAY_DIM];
-    MPI_Reduce(&(weekLethalCounter[0]), first_query_res_buf, WEEK_ARRAY_DIM, MPI_INT, MPI_SUM, root, MPI_COMM_WORLD);
+	if(do_first_query)
+    	MPI_Reduce(&(weekLethalCounter[0]), first_query_res_buf, WEEK_ARRAY_DIM, MPI_INT, MPI_SUM, root, MPI_COMM_WORLD);
 	/*
 	Gatherv for second query
    	*/
-   	int * dimension_array = (rank == root) ? (int *) malloc(sizeof(int) * size) : NULL; 
-	int gather_size = factor_map.size(), displ_array[size], recv_buf_dim;
-    factor_struct factors_for_gatherv[gather_size];
-    getArrayFromMap(factor_map, factors_for_gatherv);
+    int *dimension_array;
+	int gather_size, displ_array[size], recv_buf_dim;
 
-    MPI_Gather(&gather_size, 1, MPI_INT, dimension_array, 1, MPI_INT, root, MPI_COMM_WORLD);
-    recv_buf_dim = gather_size;
-    if(rank == root) {
-    	displ_array[0] = 0;
-    	for (int i = 1; i < size; i ++) {
-    		displ_array[i] = dimension_array[i - 1] + displ_array[i - 1];
-    		recv_buf_dim += dimension_array[i];
-    	}
-    }
-    
-    factor_struct * factor_recv_buf = (rank == root) ? (factor_struct *) malloc (sizeof(factor_struct) * recv_buf_dim) : NULL;
-    MPI_Gatherv(factors_for_gatherv, gather_size, factortype, factor_recv_buf, dimension_array, displ_array, factortype, root, MPI_COMM_WORLD);
-   
-    if(rank == root)
+    if(do_second_query)
+   	{
+		dimension_array = (rank == root) ? (int *) malloc(sizeof(int) * size) : NULL; 
+		gather_size = factor_map.size();
+		factor_struct factors_for_gatherv[gather_size];
+		getArrayFromMap(factor_map, factors_for_gatherv);
+
+		MPI_Gather(&gather_size, 1, MPI_INT, dimension_array, 1, MPI_INT, root, MPI_COMM_WORLD);
+		recv_buf_dim = gather_size;
+		if(rank == root) {
+			displ_array[0] = 0;
+			for (int i = 1; i < size; i ++) {
+				displ_array[i] = dimension_array[i - 1] + displ_array[i - 1];
+				recv_buf_dim += dimension_array[i];
+			}
+		}
+		
+		factor_struct * factor_recv_buf = (rank == root) ? (factor_struct *) malloc (sizeof(factor_struct) * recv_buf_dim) : NULL;
+		MPI_Gatherv(factors_for_gatherv, gather_size, factortype, factor_recv_buf, dimension_array, displ_array, factortype, root, MPI_COMM_WORLD);
+	
+		if(rank == root)
 #ifdef _OPENMP
-		mergeFactorRecursive(factor_recv_buf, recv_buf_dim, factor_map);
+			mergeFactorRecursive(factor_recv_buf, recv_buf_dim, factor_map);
 #else
-    	mergeFactor(factor_recv_buf, recv_buf_dim, factor_map);
+			mergeFactor(factor_recv_buf, recv_buf_dim, factor_map);
 #endif
+		if(rank == root)
+			free(dimension_array);
+	}
 	/*
 	Gatherv for third query
     */
-    gather_size = borough_map.size();
-    borough_struct boroughs_for_gatherv[gather_size];
-    getArrayFromMap(borough_map, boroughs_for_gatherv);
+   	if(do_third_query)
+	{
+		dimension_array = (rank == root) ? (int *) malloc(sizeof(int) * size) : NULL; 
+		gather_size = borough_map.size();
+		borough_struct boroughs_for_gatherv[gather_size];
+		getArrayFromMap(borough_map, boroughs_for_gatherv);
 
-    MPI_Gather(&gather_size, 1, MPI_INT, dimension_array, 1, MPI_INT, root, MPI_COMM_WORLD);
-	recv_buf_dim = gather_size;
-	if(rank == root){
-		displ_array[0] = 0;
-		for(int i = 1; i < size; i++) {
-    		displ_array[i] = dimension_array[i - 1] + displ_array[i - 1];
-    		recv_buf_dim += dimension_array[i];
+		MPI_Gather(&gather_size, 1, MPI_INT, dimension_array, 1, MPI_INT, root, MPI_COMM_WORLD);
+		recv_buf_dim = gather_size;
+		if(rank == root){
+			displ_array[0] = 0;
+			for(int i = 1; i < size; i++) {
+				displ_array[i] = dimension_array[i - 1] + displ_array[i - 1];
+				recv_buf_dim += dimension_array[i];
+			}
 		}
-	}
 
-	borough_struct * borough_recv_buf = NULL;
-	if(rank == root)
-		borough_recv_buf = (borough_struct *) malloc (sizeof(borough_struct) * recv_buf_dim);
-    MPI_Gatherv(boroughs_for_gatherv, gather_size, boroughtype, borough_recv_buf, dimension_array, displ_array, boroughtype, root, MPI_COMM_WORLD);
+		borough_struct * borough_recv_buf = NULL;
+		if(rank == root)
+			borough_recv_buf = (borough_struct *) malloc (sizeof(borough_struct) * recv_buf_dim);
+		MPI_Gatherv(boroughs_for_gatherv, gather_size, boroughtype, borough_recv_buf, dimension_array, displ_array, boroughtype, root, MPI_COMM_WORLD);
 
-	if(rank == root)
+		if(rank == root)
 #ifdef _OPENMP
-    	mergeBoroughRecursive(borough_recv_buf, recv_buf_dim, borough_map);
+			mergeBoroughRecursive(borough_recv_buf, recv_buf_dim, borough_map);
 #else
-		mergeBorough(borough_recv_buf, recv_buf_dim, borough_map);
+			mergeBorough(borough_recv_buf, recv_buf_dim, borough_map);
 #endif
+	}
 
 	auto merge = chrono::high_resolution_clock::now();
 	//END OF MERGE, BEGINNING OF PRINT
@@ -301,10 +360,12 @@ int main(int argc, char * argv[]) {
 	*/
 	if(rank == root) {
 	    
-
-	    printFirstQuery(first_query_res_buf);
-	    printSecondQuery(factor_map);
-	    printThirdQuery(borough_map);
+		if(do_first_query)
+	    	printFirstQuery(first_query_res_buf);
+		if(do_second_query)
+	    	printSecondQuery(factor_map);
+		if(do_third_query)
+	    	printThirdQuery(borough_map);
 		auto print = chrono::high_resolution_clock::now();
 
 	    auto setup_duration = chrono::duration_cast<chrono::milliseconds>(setup - start);
