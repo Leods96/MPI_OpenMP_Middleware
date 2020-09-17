@@ -24,11 +24,17 @@ int parseLine(string line, unordered_map<string, borough_struct *> &borough_map,
 	set<string> factors;
 	date_struct * date;
 
-    while(getline(ss, token, ',') && (do_second_query ? i < 23 : i < 18)) {		//23 is an optimization since we don't need data past it
-    	if(token[0] == '"') {						//Eventually change it to 28
-    		while(token[token.length()-1] != '"')
+	//23 is an optimization since we don't need data past it Eventually change it to 28
+    while(getline(ss, token, ',') && (do_second_query ? i < 23 : i < 18)) {		
+    	if(token[0] == '"') { //manege internal commas between ".."
+    		string temp = "";					
+    		while(token[token.length()-1] != '"') {
     			getline(ss, token, ',');
-    	} else if(token.compare("") != 0)
+    			temp = temp + "," + token;
+    		}
+    		token = temp;
+    	}
+    	if(token.compare("") != 0)
 	    	switch(i) {
 	    		case 0: //date
 	    			date = computeDate(token);
