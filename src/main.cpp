@@ -93,7 +93,7 @@ int main(int argc, char * argv[]) {
 	each year is composed at most by 54 week, each week start from sun to sat, 
 	if one year start from saturday the first week is composed by only one day and the first week is burned 
 	*/ 	
-	int rank, size, i = 0, filesize, starting_offset, limit;
+	int rank, size, filesize, starting_offset, limit;
 	int oob = 0;
     streampos begin, end;
 
@@ -104,7 +104,6 @@ int main(int argc, char * argv[]) {
 	MPI_Datatype typef[4] = {MPI_CHAR, MPI_INT, MPI_INT, MPI_INT}, typeb[3] = {MPI_CHAR, MPI_INT, MPI_INT};
 	int blocklenf[4] = {NAME_DIM, 1, 1, 1}, blocklenb[3] = {NAME_DIM, WEEK_ARRAY_DIM, WEEK_ARRAY_DIM};
 	MPI_Aint dispf[4], dispb[3];
-	MPI_Status stat;
 
     factor_struct * f;
     borough_struct * b;
