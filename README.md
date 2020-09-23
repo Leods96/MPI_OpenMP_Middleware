@@ -20,17 +20,17 @@ $ mpirun -np <#ofProcesses> traffic
 ```
 <br/>
 It is possible to pass parameters by command line to pass the file and the set of queries to be executed: <br/>
-1. Only 1 parameter = file name <br/>
+1 - Only 1 parameter = file name <br/>
 ```
 $ mpirun -np 2 traffic ../NY_Accidents_Data
 ```
 <br/>
-2. Only the set of queries to be executed, where each number represents the execution of the relative query (1 = is executed, 0 = is not executed) <br/>
+2 - Only the set of queries to be executed, where each number represents the execution of the relative query (1 = is executed, 0 = is not executed) <br/>
 ```
 $ mpirun -np 2 traffic 1 0 1
 ```
 <br/>
-3. Combination of the above <br/>
+3 - Combination of the above <br/>
 ```
 $ mpirun -np 2 traffic ../NY_Accidents_Data 0 1 1
 ```
