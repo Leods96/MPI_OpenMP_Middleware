@@ -37,5 +37,7 @@ $ mpirun -np 4 traffic ../NY_Accidents_Data 0 1 1
 ```
 
 <br/>
-Author: Leonardo Romano<br/>
+Authors: 
+- Leonardo Romano<br/>
+- Roberto Rocco
 
