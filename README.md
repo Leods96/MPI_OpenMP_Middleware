@@ -24,9 +24,9 @@ $ mpirun -np <#ofProcesses> traffic
 ```
 <br/>
 It is possible to pass parameters by command line which represent the file's path and the set of queries to be executed: <br/>
-* Only 1 parameter = file's path.<br/>
-* Only the set of queries to be executed, where each number represents the execution of the relative query (1 = is executed, 0 = is not executed).<br/>
-* Combination of the above.<br/>
+*  Only 1 parameter = file's path.<br/>
+*  Only the set of queries to be executed, where each number represents the execution of the relative query (1 = is executed, 0 = is not executed).<br/>
+*  Combination of the above.<br/>
 
 Examples of the three possible execution:<br/>
 
