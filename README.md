@@ -11,6 +11,10 @@ Both MPI and OpenMP libraries are used in order to obtain the maximum speed-up p
 
 Clone -> Create a directory named Build -> Run the $make command to compile all the project<br/>
 If you want to deactivate OpenMP remove the "-fopenmp" flag from the make file<br/>
+Use the env var OMP_NUM_THREADS to set the desired number of omp threads<br/>
+```
+$ export OMP_NUM_THREADS=3
+```
 
 # Run
 
@@ -20,11 +24,11 @@ $ mpirun -np <#ofProcesses> traffic
 ```
 <br/>
 It is possible to pass parameters by command line which represent the file's path and the set of queries to be executed: <br/>
-1. Only 1 parameter = file's path
-2. Only the set of queries to be executed, where each number represents the execution of the relative query (1 = is executed, 0 = is not executed)
-3. Combination of the above
+* Only 1 parameter = file's path.<br/>
+* Only the set of queries to be executed, where each number represents the execution of the relative query (1 = is executed, 0 = is not executed).<br/>
+* Combination of the above.<br/>
 
-Examples of the three possible execution:
+Examples of the three possible execution:<br/>
 
 ```
 $ mpirun -np 2 traffic ../NY_Accidents_Data
