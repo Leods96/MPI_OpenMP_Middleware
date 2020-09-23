@@ -31,9 +31,9 @@ It is possible to pass parameters by command line which represent the file's pat
 Examples of the three possible execution:<br/>
 
 ```
-$ mpirun -np 2 traffic ../NY_Accidents_Data
+$ mpirun -np 6 traffic ../NY_Accidents_Data
 $ mpirun -np 2 traffic 1 0 1
-$ mpirun -np 2 traffic ../NY_Accidents_Data 0 1 1
+$ mpirun -np 4 traffic ../NY_Accidents_Data 0 1 1
 ```
 
 <br/>
