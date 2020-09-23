@@ -15,12 +15,23 @@ If you want to deactivate OpenMP remove the "-fopenmp" flag from the make file<b
 # Run
 
 If you want to use MPI run the following command<br/>
+```
 $mpirun -np <#ofProcesses> traffic
+```
 <br/>
 It is possible to pass parameters by command line to pass the file and the set of queries to be executed:
-1. Only 1 parameter = file name, eg: $mpirun -np 2 traffic ../NY_Accidents_Data
-2. Only the set of queries to be executed, eg: $mpirun -np 2 traffic 1 0 1, where each number represents the execution of the relative query (1 = is executed, 0 = is not executed)
-3. Combination of the above, eg: $mpirun -np 2 traffic ../NY_Accidents_Data 0 1 1
+1. Only 1 parameter = file name 
+```
+$mpirun -np 2 traffic ../NY_Accidents_Data
+```
+2. Only the set of queries to be executed, where each number represents the execution of the relative query (1 = is executed, 0 = is not executed)
+```
+$mpirun -np 2 traffic 1 0 1
+```
+3. Combination of the above
+```
+$mpirun -np 2 traffic ../NY_Accidents_Data 0 1 1
+```
 
 <br/>
 Author: Leonardo Romano<br/>
